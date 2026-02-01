@@ -1,0 +1,7 @@
+streamlit
+sounddevice
+scipy
+numpy
+azure-cognitiveservices-speech==1.36.0
+requests
+python-doten
