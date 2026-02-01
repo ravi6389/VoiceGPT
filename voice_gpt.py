@@ -4,16 +4,11 @@ import tempfile
 import requests
 import azure.cognitiveservices.speech as speechsdk
 
-# -----------------------------------------------------
-# PAGE CONFIG
-# -----------------------------------------------------
-st.set_page_config(page_title="Voice → English Translator", layout="centered")
+st.set_page_config(page_title="Voice Translator", layout="centered")
 
 st.title("🎙️ Voice → English Translator (Streamlit Cloud Compatible)")
 
-# -----------------------------------------------------
-# SECRETS
-# -----------------------------------------------------
+# ------------------ AZURE KEYS ------------------
 AZURE_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
 AZURE_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
 
@@ -24,12 +19,10 @@ TRANSLATOR_ENDPOINT = (
     "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0"
 )
 
-# -----------------------------------------------------
-# MICROPHONE RECORDER (BROWSER JAVASCRIPT)
-# -----------------------------------------------------
+# ----------------- RECORDING COMPONENT -----------------
 st.subheader("🎤 Step 1: Record your voice")
 
-recorder_html = """
+js_code = """
 <div>
 <button id="startBtn">🎙️ Start Recording</button>
 <button id="stopBtn">⛔ Stop Recording</button>
@@ -43,42 +36,39 @@ let audioChunks = [];
 document.getElementById("startBtn").onclick = async function() {
     document.getElementById("status").innerHTML = "Recording...";
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
     mediaRecorder = new MediaRecorder(stream);
-
     mediaRecorder.start();
-    audioChunks = [];
 
-    mediaRecorder.ondataavailable = event => {
-        audioChunks.push(event.data);
-    }
+    audioChunks = [];
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
 };
 
 document.getElementById("stopBtn").onclick = function() {
-    document.getElementById("status").innerHTML = "Stopping...";
+    document.getElementById("status").innerHTML = "Processing...";
     mediaRecorder.stop();
 
     mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const file = new File([audioBlob], "recording.webm");
+        const blob = new Blob(audioChunks, { type: "audio/webm" });
+        const file = new File([blob], "recording.webm");
 
+        // Put the file inside Streamlit's uploader
         const dataTransfer = new DataTransfer();
         dataTransfer.items.add(file);
-
         document.querySelector('input[type=file]').files = dataTransfer.files;
+
         document.getElementById("status").innerHTML = "Recording saved!";
     };
 };
 </script>
 """
 
-components.html(recorder_html, height=200)
+components.html(js_code, height=200)
 
 uploaded_audio = st.file_uploader("Your recorded audio:", type=["webm", "wav"])
 
-# -----------------------------------------------------
-# AZURE SPEECH TRANSCRIPTION
-# -----------------------------------------------------
-def transcribe_audio(file_path):
+# ------------ SPEECH TO TEXT ----------------
+def transcribe_audio(path):
     speech_config = speechsdk.SpeechConfig(
         subscription=AZURE_SPEECH_KEY,
         region=AZURE_SPEECH_REGION
@@ -91,7 +81,7 @@ def transcribe_audio(file_path):
         ]
     )
 
-    audio_config = speechsdk.AudioConfig(filename=file_path)
+    audio_config = speechsdk.AudioConfig(filename=path)
 
     recognizer = speechsdk.SpeechRecognizer(
         speech_config=speech_config,
@@ -104,12 +94,9 @@ def transcribe_audio(file_path):
     if result.reason == speechsdk.ResultReason.RecognizedSpeech:
         return result.text
 
-    return "Transcription failed."
+    return "⚠ Could not transcribe."
 
-
-# -----------------------------------------------------
-# TRANSLATE TO ENGLISH
-# -----------------------------------------------------
+# ------------ TRANSLATE ----------------
 def translate_to_english(text):
     headers = {
         "Ocp-Apim-Subscription-Key": AZURE_TRANSLATOR_KEY,
@@ -129,9 +116,7 @@ def translate_to_english(text):
     return data[0]["translations"][0]["text"]
 
 
-# -----------------------------------------------------
-# ACTION BUTTON
-# -----------------------------------------------------
+# ------------ MAIN ACTION ----------------
 if uploaded_audio:
     st.audio(uploaded_audio)
 
@@ -141,12 +126,12 @@ if uploaded_audio:
 
     if st.button("📝 Transcribe & Translate"):
         st.info("Transcribing…")
-        text = transcribe_audio(temp.name)
 
+        text = transcribe_audio(temp.name)
         st.subheader("📝 Transcription")
         st.write(text)
 
-        st.info("Translating…")
+        st.info("Translating to English…")
         english = translate_to_english(text)
 
         st.subheader("🌍 English Translation")
