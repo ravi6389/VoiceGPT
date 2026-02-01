@@ -1,38 +1,25 @@
 import streamlit as st
-import sounddevice as sd
-import scipy.io.wavfile as wav
+from audiorecorder import audiorecorder
 import numpy as np
+import scipy.io.wavfile as wav
 import azure.cognitiveservices.speech as speechsdk
 import requests
 import os
-from dotenv import load_dotenv
 
-# Load environment variables
+# Load environment variables (local only)
 load_dotenv()
 
+# Read Azure keys from Streamlit secrets
 AZURE_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
 AZURE_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
 
-AZURE_TRANSLATOR_KEY =  st.secrets["AZURE_TRANSLATOR_KEY"]
-AZURE_TRANSLATOR_REGION =  st.secrets["AZURE_TRANSLATOR_REGION"]
-
-st.write('AZURE_SPEECH_KEY', AZURE_SPEECH_KEY)
-st.write('AZURE_SPEECH_REGION', AZURE_SPEECH_REGION)
-
-st.write('AZURE_TRANSLATOR_KEY', AZURE_TRANSLATOR_KEY)
-st.write('AZURE_TRANSLATOR_REGION', AZURE_TRANSLATOR_REGION)
-
-
+AZURE_TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
+AZURE_TRANSLATOR_REGION = st.secrets["AZURE_TRANSLATOR_REGION"]
 
 TRANSLATOR_ENDPOINT = (
     "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0"
 )
 
-# Mic config
-MIC_DEVICE_INDEX = 1     # <-- Your working microphone
-SAMPLE_RATE = 16000
-import azure.cognitiveservices.speech as speechsdk
-st.write(speechsdk.__file__)
 # UI setup
 st.set_page_config(page_title="Voice → English Translator", layout="centered")
 st.title("🎙️ Voice → English Translator")
@@ -40,32 +27,30 @@ st.title("🎙️ Voice → English Translator")
 if "recorded_file" not in st.session_state:
     st.session_state.recorded_file = None
 
+
 # -------------------------------------------------------------
-# RECORD AUDIO (Option A)
+# RECORD AUDIO USING BROWSER MICROPHONE
 # -------------------------------------------------------------
-def record_audio(duration):
-    sd.default.device = (MIC_DEVICE_INDEX, None)
+def record_audio():
+    st.info("🎤 Click 'Start Recording' and speak...")
 
-    st.info("🎤 Recording... speak now!")
+    audio = audiorecorder("Start Recording", "Stop Recording")
 
-    recording = sd.rec(
-        int(duration * SAMPLE_RATE),
-        samplerate=SAMPLE_RATE,
-        channels=1,
-        dtype="int16"
-    )
-    sd.wait()
+    if len(audio) > 0:
+        st.success("Recording completed!")
+        st.audio(audio.tobytes(), format="audio/wav")
 
-    # Save WAV
-    wav.write("audio.wav", SAMPLE_RATE, recording)
-    st.session_state.recorded_file = "audio.wav"
+        # Convert to numpy array
+        audio_bytes = audio.tobytes()
+        audio_np = np.frombuffer(audio_bytes, dtype=np.int16)
 
-    st.success("Recording completed!")
-    st.audio("audio.wav")
+        # Save WAV file
+        wav.write("audio.wav", 16000, audio_np)
+        st.session_state.recorded_file = "audio.wav"
 
 
 # -------------------------------------------------------------
-# SPEECH TO TEXT
+# SPEECH → TEXT (Azure)
 # -------------------------------------------------------------
 def transcribe_audio():
     if not st.session_state.recorded_file:
@@ -78,10 +63,12 @@ def transcribe_audio():
         subscription=AZURE_SPEECH_KEY,
         region=AZURE_SPEECH_REGION
     )
+
     auto_detect = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
         languages=[
-            "hi-IN","ta-IN","te-IN","ml-IN","kn-IN","mr-IN",
-            "bn-IN","gu-IN","pa-IN","ur-IN","en-US","es-ES"
+            "hi-IN", "ta-IN", "te-IN", "ml-IN", "kn-IN",
+            "mr-IN", "bn-IN", "gu-IN", "pa-IN", "ur-IN",
+            "en-US", "es-ES"
         ]
     )
 
@@ -92,37 +79,27 @@ def transcribe_audio():
         audio_config=audio_config,
         auto_detect_source_language_config=auto_detect
     )
+
     result = recognizer.recognize_once()
 
     st.write("DEBUG: Result Reason:", result.reason)
     st.write("DEBUG: Text:", result.text)
 
+    # Handle cancellation errors properly
     if result.reason == speechsdk.ResultReason.Canceled:
-        cancellation = speechsdk.CancellationDetails.from_result(result)
-
+        cancellation = speechsdk.CancellationDetails(result)
         st.error("Azure Speech FAILED")
 
-        st.write("CANCEL Reason:", cancellation.reason)
-        st.write("Error Code:", cancellation.error_code)
-        st.write("Details:", cancellation.error_details)
-
-        return ""
-
-
-    # Handle cancellation
-    if result.reason == speechsdk.ResultReason.Canceled:
-        cancellation = speechsdk.CancellationDetailsBase(result)
-        st.error("Azure Speech FAILED")
         st.write("Cancel Reason:", cancellation.reason)
         st.write("Error Code:", cancellation.error_code)
         st.write("Details:", cancellation.error_details)
         return ""
 
-
+    return result.text
 
 
 # -------------------------------------------------------------
-# TRANSLATE TEXT → ENGLISH
+# TRANSLATION → ENGLISH
 # -------------------------------------------------------------
 def translate_to_english(text):
     if not text:
@@ -149,15 +126,16 @@ def translate_to_english(text):
 
 
 # -------------------------------------------------------------
-# UI: Buttons
+# UI
 # -------------------------------------------------------------
-duration = st.slider("Recording duration (seconds):", 2, 15, 5)
+st.subheader("🎤 Step 1: Record your voice")
 
-if st.button("🎤 Record Audio"):
-    record_audio(duration)
+record_audio()
 
 if st.button("📝 Transcribe & Translate"):
-    st.audio(st.session_state.recorded_file)
+    if st.session_state.recorded_file:
+        st.audio(st.session_state.recorded_file)
+
     text = transcribe_audio()
 
     st.markdown("### 📝 Transcription")
@@ -167,4 +145,3 @@ if st.button("📝 Transcribe & Translate"):
 
     st.markdown("### 🌍 English Translation")
     st.success(english)
-
