@@ -113,7 +113,7 @@ def translate_to_english(text):
     )
 
     data = response.json()
-    st.wtite(data)
+    st.write(data)
     return data[0]["translations"][0]["text"]
 
 
@@ -137,4 +137,5 @@ if uploaded_audio:
 
         st.subheader("🌍 English Translation")
         st.success(english)
+
 
