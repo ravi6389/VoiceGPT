@@ -4,10 +4,7 @@ import numpy as np
 import scipy.io.wavfile as wav
 import azure.cognitiveservices.speech as speechsdk
 import requests
-import os
 
-# Load environment variables (local only)
-load_dotenv()
 
 # Read Azure keys from Streamlit secrets
 AZURE_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
@@ -145,3 +142,4 @@ if st.button("📝 Transcribe & Translate"):
 
     st.markdown("### 🌍 English Translation")
     st.success(english)
+
