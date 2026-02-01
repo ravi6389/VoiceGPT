@@ -10,11 +10,11 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-AZURE_SPEECH_KEY = os.getenv("AZURE_SPEECH_KEY")
-AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION")
+AZURE_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
+AZURE_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
 
-AZURE_TRANSLATOR_KEY = os.getenv("AZURE_TRANSLATOR_KEY")
-AZURE_TRANSLATOR_REGION = os.getenv("AZURE_TRANSLATOR_REGION")
+AZURE_TRANSLATOR_KEY =  st.secrets["AZURE_TRANSLATOR_KEY"]
+AZURE_TRANSLATOR_REGION =  st.secrets["AZURE_TRANSLATOR_REGION"]
 
 st.write('AZURE_SPEECH_KEY', AZURE_SPEECH_KEY)
 st.write('AZURE_SPEECH_REGION', AZURE_SPEECH_REGION)
@@ -167,3 +167,4 @@ if st.button("📝 Transcribe & Translate"):
 
     st.markdown("### 🌍 English Translation")
     st.success(english)
+
