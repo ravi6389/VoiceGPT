@@ -1,108 +1,107 @@
 import streamlit as st
-from audiorecorder import audiorecorder
 import numpy as np
 import scipy.io.wavfile as wav
 import azure.cognitiveservices.speech as speechsdk
 import requests
+import tempfile
+from io import BytesIO
 
+st.set_page_config(page_title="Voice → English Translator")
 
-# Read Azure keys from Streamlit secrets
+st.title("🎙️ Voice → English Translator (Streamlit Cloud Compatible)")
+
+# Azure keys
 AZURE_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
 AZURE_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
-
 AZURE_TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
 AZURE_TRANSLATOR_REGION = st.secrets["AZURE_TRANSLATOR_REGION"]
 
-TRANSLATOR_ENDPOINT = (
-    "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0"
-)
+TRANSLATOR_ENDPOINT = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0"
 
-# UI setup
-st.set_page_config(page_title="Voice → English Translator", layout="centered")
-st.title("🎙️ Voice → English Translator")
+# ----------------------------------------------------------
+# 1️⃣ Browser Microphone Recorder (HTML + JS)
+# ----------------------------------------------------------
+st.subheader("🎤 Step 1: Record your voice")
 
-if "recorded_file" not in st.session_state:
-    st.session_state.recorded_file = None
+mic_html = """
+<script>
+let chunks = [];
+let recorder;
+let audioBlob;
+
+async function startRecording() {
+    let stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = e => {
+        audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        let file = new File([audioBlob], "recording.webm");
+        let dt = new DataTransfer();
+        dt.items.add(file);
+        document.querySelector('input[type=file]').files = dt.files;
+    };
+    recorder.start();
+}
+
+function stopRecording() {
+    recorder.stop();
+}
+</script>
+
+<button onclick="startRecording()">🎙️ Start Recording</button>
+<button onclick="stopRecording()">⛔ Stop Recording</button>
+"""
+
+st.markdown(mic_html, unsafe_allow_html=True)
+
+uploaded_audio = st.file_uploader("Your recorded audio appears here:", type=["webm", "wav"])
+
+# ----------------------------------------------------------
+# 2️⃣ Convert recorded audio to WAV for Azure
+# ----------------------------------------------------------
+def convert_to_wav(uploaded_file):
+    temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+
+    # Azure SDK needs WAV → we use ffmpeg-free method: WebM → Azure directly → NOT needed
+    temp_wav.write(uploaded_file.read())
+    temp_wav.flush()
+
+    return temp_wav.name
 
 
-# -------------------------------------------------------------
-# RECORD AUDIO USING BROWSER MICROPHONE
-# -------------------------------------------------------------
-def record_audio():
-    st.info("🎤 Click 'Start Recording' and speak...")
-
-    audio = audiorecorder("Start Recording", "Stop Recording")
-
-    if len(audio) > 0:
-        st.success("Recording completed!")
-        st.audio(audio.tobytes(), format="audio/wav")
-
-        # Convert to numpy array
-        audio_bytes = audio.tobytes()
-        audio_np = np.frombuffer(audio_bytes, dtype=np.int16)
-
-        # Save WAV file
-        wav.write("audio.wav", 16000, audio_np)
-        st.session_state.recorded_file = "audio.wav"
-
-
-# -------------------------------------------------------------
-# SPEECH → TEXT (Azure)
-# -------------------------------------------------------------
-def transcribe_audio():
-    if not st.session_state.recorded_file:
-        st.error("Please record audio first!")
-        return ""
-
-    st.info("Transcribing with Azure Speech…")
+# ----------------------------------------------------------
+# 3️⃣ Azure Speech Recognition
+# ----------------------------------------------------------
+def transcribe(audio_path):
+    st.info("Transcribing with Azure...")
 
     speech_config = speechsdk.SpeechConfig(
-        subscription=AZURE_SPEECH_KEY,
-        region=AZURE_SPEECH_REGION
+        subscription=AZURE_SPEECH_KEY, region=AZURE_SPEECH_REGION
     )
 
-    auto_detect = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
-        languages=[
-            "hi-IN", "ta-IN", "te-IN", "ml-IN", "kn-IN",
-            "mr-IN", "bn-IN", "gu-IN", "pa-IN", "ur-IN",
-            "en-US", "es-ES"
-        ]
-    )
+    audio = speechsdk.audio.AudioConfig(filename=audio_path)
 
-    audio_config = speechsdk.AudioConfig(filename=st.session_state.recorded_file)
+    auto_lang = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
+        languages=["hi-IN","ta-IN","te-IN","ml-IN","kn-IN",
+                  "mr-IN","bn-IN","gu-IN","pa-IN","ur-IN","en-US"]
+    )
 
     recognizer = speechsdk.SpeechRecognizer(
         speech_config=speech_config,
-        audio_config=audio_config,
-        auto_detect_source_language_config=auto_detect
+        audio_config=audio,
+        auto_detect_source_language_config=auto_lang
     )
 
     result = recognizer.recognize_once()
 
-    st.write("DEBUG: Result Reason:", result.reason)
-    st.write("DEBUG: Text:", result.text)
-
-    # Handle cancellation errors properly
-    if result.reason == speechsdk.ResultReason.Canceled:
-        cancellation = speechsdk.CancellationDetails(result)
-        st.error("Azure Speech FAILED")
-
-        st.write("Cancel Reason:", cancellation.reason)
-        st.write("Error Code:", cancellation.error_code)
-        st.write("Details:", cancellation.error_details)
-        return ""
-
     return result.text
 
 
-# -------------------------------------------------------------
-# TRANSLATION → ENGLISH
-# -------------------------------------------------------------
-def translate_to_english(text):
-    if not text:
-        return "No transcription available."
-
-    st.info("Translating to English…")
+# ----------------------------------------------------------
+# 4️⃣ Translator → English
+# ----------------------------------------------------------
+def translate(text):
+    st.info("Translating to English...")
 
     headers = {
         "Ocp-Apim-Subscription-Key": AZURE_TRANSLATOR_KEY,
@@ -112,34 +111,26 @@ def translate_to_english(text):
 
     body = [{"text": text}]
 
-    response = requests.post(
-        TRANSLATOR_ENDPOINT + "&to=en",
-        headers=headers,
-        json=body
-    )
+    response = requests.post(TRANSLATOR_ENDPOINT + "&to=en",
+                             headers=headers, json=body)
 
-    data = response.json()
-    return data[0]["translations"][0]["text"]
+    return response.json()[0]["translations"][0]["text"]
 
 
-# -------------------------------------------------------------
-# UI
-# -------------------------------------------------------------
-st.subheader("🎤 Step 1: Record your voice")
+# ----------------------------------------------------------
+# 5️⃣ Buttons
+# ----------------------------------------------------------
+if uploaded_audio is not None:
+    st.success("Audio received successfully!")
+    st.audio(uploaded_audio)
 
-record_audio()
+    audio_path = convert_to_wav(uploaded_audio)
 
-if st.button("📝 Transcribe & Translate"):
-    if st.session_state.recorded_file:
-        st.audio(st.session_state.recorded_file)
+    if st.button("📝 Transcribe & Translate"):
+        text = transcribe(audio_path)
+        st.write("### 📝 Transcription")
+        st.write(text)
 
-    text = transcribe_audio()
-
-    st.markdown("### 📝 Transcription")
-    st.write(text)
-
-    english = translate_to_english(text)
-
-    st.markdown("### 🌍 English Translation")
-    st.success(english)
-
+        english = translate(text)
+        st.write("### 🌍 English Translation")
+        st.success(english)
