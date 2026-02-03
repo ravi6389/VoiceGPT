@@ -181,81 +181,46 @@
 #     st.info("Record something above to enable the replay button.")
 
 import streamlit as st
-import azure.cognitiveservices.speech as speechsdk
+import requests
 import tempfile
-import os
 from pydub import AudioSegment
 
-st.title("🎙️ Auto-Detect & Translate")
+# Azure Credentials from Streamlit Secrets
+AZURE_KEY = st.secrets["AZURE_SPEECH_KEY"]
+AZURE_REGION = st.secrets["AZURE_SPEECH_REGION"]
 
-# Azure Credentials
-AZURE_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
-AZURE_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
-
-def convert_to_wav(audio_input):
-    """Converts browser audio to Azure-compatible 16kHz Mono WAV"""
-    audio = AudioSegment.from_file(audio_input)
+def translate_via_rest(audio_bytes):
+    # Step 1: Convert to 16kHz Mono WAV (Mandatory for Azure)
+    audio = AudioSegment.from_file(audio_bytes)
     audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
     
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_wav:
-        audio.export(tmp_wav.name, format="wav")
-        return tmp_wav.name
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        audio.export(tmp.name, format="wav")
+        with open(tmp.name, "rb") as f:
+            data = f.read()
 
-def translate_audio(audio_path):
-    translation_config = speechsdk.translation.SpeechTranslationConfig(
-        subscription=AZURE_SPEECH_KEY, 
-        region=AZURE_SPEECH_REGION
-    )
-    translation_config.add_target_language("en")
-    
-    # Crucial for Linux/Cloud: Set the speech recognition mode to conversation or dictation
-    translation_config.set_property(speechsdk.PropertyId.SpeechServiceConnection_TranslationVoice, "en-US-JennyNeural")
+    # Step 2: Call Azure REST API (No SDK required, avoids Error 2176)
+    # Using 'en-US' for detection; Azure REST supports one language per call
+    url = f"https://{AZURE_REGION}://"
+    headers = {
+        "Ocp-Apim-Subscription-Key": AZURE_KEY,
+        "Content-type": "audio/wav; codec=audio/pcm; samplerate=16000",
+        "Accept": "application/json"
+    }
 
-    auto_detect_config = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
-        languages=["hi-IN", "ta-IN", "te-IN", "bn-IN", "en-US"]
-    )
+    response = requests.post(url, headers=headers, data=data)
+    return response.json()
 
-    # Use a push stream for better compatibility with cloud environments
-    audio_config = speechsdk.audio.AudioConfig(filename=audio_path)
-    
-    recognizer = speechsdk.translation.TranslationRecognizer(
-        translation_config=translation_config,
-        audio_config=audio_config,
-        auto_detect_source_language_config=auto_detect_config
-    )
+# Streamlit UI
+audio_input = st.audio_input("Record for Translation")
 
-    result = recognizer.recognize_once()
+if audio_input:
+    if st.button("🌍 Translate Now"):
+        with st.spinner("Processing..."):
+            result = translate_via_rest(audio_input)
+            if "DisplayText" in result:
+                st.success(f"**Transcription:** {result['DisplayText']}")
+            else:
+                st.error("Could not transcribe. Check your Azure Key and Region.")
 
-    if result.reason == speechsdk.ResultReason.TranslatedSpeech:
-        lang = result.properties.get(speechsdk.PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult)
-        return lang, result.text, result.translations['en']
-    elif result.reason == speechsdk.ResultReason.Canceled:
-        details = result.cancellation_details
-        return None, None, f"Azure Error: {details.reason} - {details.error_details}"
-    
-    return None, None, "No speech detected."
-
-
-# UI Logic
-audio_value = st.audio_input("Record your voice")
-
-if audio_value:
-    if st.button("✨ Auto-Detect & Translate"):
-        # Step 1: Format Conversion
-        with st.spinner("Processing audio format..."):
-            fixed_wav_path = convert_to_wav(audio_value)
-        
-        # Step 2: Azure Translation
-        lang, original, translated = translate_audio(fixed_wav_path)
-        
-        if lang:
-            st.success(f"Detected: {lang}")
-            st.write(f"**Original:** {original}")
-            st.info(f"**English:** {translated}")
-        else:
-            st.error(translated)
-            
-        # Cleanup
-        if os.path.exists(fixed_wav_path):
-            os.remove(fixed_wav_path)
 
