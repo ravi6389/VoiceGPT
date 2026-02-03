@@ -186,67 +186,74 @@ import tempfile
 import os
 from pydub import AudioSegment
 
-st.title("🎙️ UK West Translator (Cloud REST)")
+st.title("🎙️ UK West Voice Translator")
 
-# 1. Setup Secrets (Make sure these are in your Streamlit Cloud Secrets)
-AZURE_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
-AZURE_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"] # Should be "ukwest"
-AZURE_TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
+# Load Secrets
+AZ_KEY = st.secrets["AZURE_SPEECH_KEY"]
+AZ_REGION = st.secrets["AZURE_SPEECH_REGION"] # "ukwest"
+TRANS_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
 
-def get_transcription(audio_input):
-    # Convert to 16kHz Mono WAV (Mandatory for Azure)
-    audio = AudioSegment.from_file(audio_input)
+def transcribe_and_translate(audio_file):
+    # 1. AUDIO CONVERSION (Required for Azure REST)
+    audio = AudioSegment.from_file(audio_file)
     audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         audio.export(tmp.name, format="wav")
         with open(tmp.name, "rb") as f:
-            audio_data = f.read()
+            raw_data = f.read()
 
-    # CORRECTED URL: Prefix the region to the standard domain
-    stt_url = f"https://{AZURE_SPEECH_REGION}://"
+    # 2. SPEECH-TO-TEXT (STT) - Fixed URL Construction
+    # We combine the region with the official microsoft domain
+    stt_endpoint = f"https://{AZ_REGION}://"
     
-    headers = {
-        "Ocp-Apim-Subscription-Key": AZURE_SPEECH_KEY,
+    stt_headers = {
+        "Ocp-Apim-Subscription-Key": AZ_KEY,
         "Content-type": "audio/wav; codec=audio/pcm; samplerate=16000",
         "Accept": "application/json"
     }
 
-    response = requests.post(stt_url, headers=headers, data=audio_data)
-    os.remove(tmp.name)
-    return response.json()
+    try:
+        # Get Transcription
+        stt_response = requests.post(stt_endpoint, headers=stt_headers, data=raw_data)
+        stt_response.raise_for_status()
+        transcription = stt_response.json().get("DisplayText", "")
 
-def translate_to_english(text):
-    # Azure Translator REST URL
-    translator_url = f"https://api.cognitive.microsofttranslator.com"
-    
-    headers = {
-        "Ocp-Apim-Subscription-Key": AZURE_TRANSLATOR_KEY,
-        "Ocp-Apim-Subscription-Region": AZURE_SPEECH_REGION,
-        "Content-type": "application/json"
-    }
-    
-    body = [{"text": text}]
-    response = requests.post(translator_url, headers=headers, json=body)
-    return response.json()
+        if not transcription:
+            return "No speech detected.", ""
 
-# UI Workflow
-audio_value = st.audio_input("Record your voice")
+        # 3. TRANSLATION - Fixed URL Construction
+        trans_endpoint = "https://api.cognitive.microsofttranslator.com"
+        
+        trans_headers = {
+            "Ocp-Apim-Subscription-Key": TRANS_KEY,
+            "Ocp-Apim-Subscription-Region": AZ_REGION, # Required for regional keys
+            "Content-type": "application/json"
+        }
+        
+        body = [{"text": transcription}]
+        trans_response = requests.post(trans_endpoint, headers=trans_headers, json=body)
+        trans_response.raise_for_status()
+        
+        translation = trans_response.json()[0]["translations"][0]["text"]
+        return transcription, translation
 
-if audio_value:
-    if st.button("📝 Transcribe & Translate"):
+    except Exception as e:
+        return f"Error: {str(e)}", ""
+    finally:
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+
+# --- UI ---
+audio_input = st.audio_input("Record your voice (Hindi)")
+
+if audio_input:
+    if st.button("Translate to English"):
         with st.spinner("Processing..."):
-            # Step 1: Speech to Text
-            stt_result = get_transcription(audio_value)
+            orig, trans = transcribe_and_translate(audio_input)
             
-            if "DisplayText" in stt_result:
-                original_text = stt_result["DisplayText"]
-                st.write(f"**Original (Hindi):** {original_text}")
-                
-                # Step 2: Translate Text
-                trans_result = translate_to_english(original_text)
-                translated_text = trans_result[0]["translations"][0]["text"]
-                st.success(f"**English:** {translated_text}")
+            if trans:
+                st.write(f"**Original:** {orig}")
+                st.success(f"**English:** {trans}")
             else:
-                st.error(f"STT Error: {stt_result}")
-
+                st.error(orig)
