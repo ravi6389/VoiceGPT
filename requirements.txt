@@ -4,3 +4,4 @@ numpy
 azure-cognitiveservices-speech==1.36.0
 requests
 streamlit-audiorecorder
+pydub
