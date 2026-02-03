@@ -183,44 +183,54 @@
 import streamlit as st
 import requests
 import tempfile
+import os
 from pydub import AudioSegment
 
-# Azure Credentials from Streamlit Secrets
-AZURE_KEY = st.secrets["AZURE_SPEECH_KEY"]
-AZURE_REGION = st.secrets["AZURE_SPEECH_REGION"]
+st.title("🎙️ Cloud Translator (REST Mode)")
 
-def translate_via_rest(audio_bytes):
-    # Step 1: Convert to 16kHz Mono WAV (Mandatory for Azure)
-    audio = AudioSegment.from_file(audio_bytes)
+# 1. Get Secrets
+AZURE_KEY = st.secrets["AZURE_SPEECH_KEY"]
+AZURE_REGION = st.secrets["AZURE_SPEECH_REGION"]  # e.g., "ukwest"
+
+def process_and_translate(audio_input):
+    # Step A: Convert to 16kHz Mono WAV (Required for Azure)
+    audio = AudioSegment.from_file(audio_input)
     audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         audio.export(tmp.name, format="wav")
         with open(tmp.name, "rb") as f:
-            data = f.read()
-
-    # Step 2: Call Azure REST API (No SDK required, avoids Error 2176)
-    # Using 'en-US' for detection; Azure REST supports one language per call
+            audio_data = f.read()
+    
+    # Step B: Construct correct REST URL
+    # Note: REST API requires a specific language, e.g., 'hi-IN' or 'en-US'
     url = f"https://{AZURE_REGION}://"
+    
     headers = {
         "Ocp-Apim-Subscription-Key": AZURE_KEY,
         "Content-type": "audio/wav; codec=audio/pcm; samplerate=16000",
         "Accept": "application/json"
     }
 
-    response = requests.post(url, headers=headers, data=data)
-    return response.json()
+    try:
+        response = requests.post(url, headers=headers, data=audio_data)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
 
-# Streamlit UI
-audio_input = st.audio_input("Record for Translation")
+# UI
+audio_value = st.audio_input("Record your voice")
 
-if audio_input:
-    if st.button("🌍 Translate Now"):
-        with st.spinner("Processing..."):
-            result = translate_via_rest(audio_input)
+if audio_value:
+    if st.button("✨ Transcribe"):
+        with st.spinner("Processing via Azure..."):
+            result = process_and_translate(audio_value)
+            
             if "DisplayText" in result:
-                st.success(f"**Transcription:** {result['DisplayText']}")
+                st.success(f"**Result:** {result['DisplayText']}")
             else:
-                st.error("Could not transcribe. Check your Azure Key and Region.")
-
-
+                st.error(f"Failed: {result}")
