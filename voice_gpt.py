@@ -138,47 +138,123 @@
 #         st.subheader("🌍 English Translation")
 #         st.success(english)
 
+# import streamlit as st
+
+# st.set_page_config(page_title="Audio Recorder & Replay", page_icon="🎙️")
+
+# st.title("🎙️ Cloud Microphone App")
+
+# # Initialize session state to store audio
+# if "last_audio" not in st.session_state:
+#     st.session_state.last_audio = None
+
+# # 1. Recording Widget
+# audio_data = st.audio_input("Record your message")
+
+# # If a new recording is made, save it to session state
+# if audio_data:
+#     st.session_state.last_audio = audio_data.read()
+
+# # 2. Replay Section
+# if st.session_state.last_audio:
+#     st.write("---")
+#     st.subheader("Controls")
+    
+#     # Standard player (shows up automatically)
+#     st.write("Current Recording:")
+#     st.audio(st.session_state.last_audio)
+    
+#     # Custom Replay Button (triggers the audio again)
+#     if st.button("🔄 Replay Sound"):
+#         # This re-renders the audio component specifically for playback
+#         st.audio(st.session_state.last_audio, autoplay=True)
+#         st.toast("Replaying...")
+
+#     # Optional: Download Button
+#     st.download_button(
+#         label="📥 Download Recording",
+#         data=st.session_state.last_audio,
+#         file_name="cloud_recording.wav",
+#         mime="audio/wav"
+#     )
+# else:
+#     st.info("Record something above to enable the replay button.")
+
 import streamlit as st
+import azure.cognitiveservices.speech as speechsdk
+import tempfile
+import os
 
-st.set_page_config(page_title="Audio Recorder & Replay", page_icon="🎙️")
+st.title("🎙️ Auto-Detect & Translate to English")
 
-st.title("🎙️ Cloud Microphone App")
+# 1. Setup Azure Credentials (from Streamlit Secrets)
+AZURE_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
+AZURE_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
 
-# Initialize session state to store audio
-if "last_audio" not in st.session_state:
-    st.session_state.last_audio = None
-
-# 1. Recording Widget
-audio_data = st.audio_input("Record your message")
-
-# If a new recording is made, save it to session state
-if audio_data:
-    st.session_state.last_audio = audio_data.read()
-
-# 2. Replay Section
-if st.session_state.last_audio:
-    st.write("---")
-    st.subheader("Controls")
-    
-    # Standard player (shows up automatically)
-    st.write("Current Recording:")
-    st.audio(st.session_state.last_audio)
-    
-    # Custom Replay Button (triggers the audio again)
-    if st.button("🔄 Replay Sound"):
-        # This re-renders the audio component specifically for playback
-        st.audio(st.session_state.last_audio, autoplay=True)
-        st.toast("Replaying...")
-
-    # Optional: Download Button
-    st.download_button(
-        label="📥 Download Recording",
-        data=st.session_state.last_audio,
-        file_name="cloud_recording.wav",
-        mime="audio/wav"
+def translate_audio(audio_path):
+    # Configure Translation
+    translation_config = speechsdk.translation.SpeechTranslationConfig(
+        subscription=AZURE_SPEECH_KEY, 
+        region=AZURE_SPEECH_REGION
     )
-else:
-    st.info("Record something above to enable the replay button.")
+    
+    # Target is always English
+    translation_config.add_target_language("en")
+    
+    # Setup Auto-Detection for potential source languages
+    # You can add up to 10 candidate languages
+    auto_detect_config = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
+        languages=["hi-IN", "ta-IN", "te-IN", "bn-IN", "es-ES", "fr-FR", "de-DE"]
+    )
+
+    audio_config = speechsdk.audio.AudioConfig(filename=audio_path)
+    
+    # Create the recognizer with auto-detection
+    recognizer = speechsdk.translation.TranslationRecognizer(
+        translation_config=translation_config,
+        audio_config=audio_config,
+        auto_detect_source_language_config=auto_detect_config
+    )
+
+    st.info("Analyzing audio and translating...")
+    result = recognizer.recognize_once()
+
+    if result.reason == speechsdk.ResultReason.TranslatedSpeech:
+        # Detected Language
+        detected_lang = result.properties.get(
+            speechsdk.PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult
+        )
+        return detected_lang, result.text, result.translations['en']
+    
+    return None, None, f"Error: {result.reason}"
+
+# 2. Recording UI
+audio_value = st.audio_input("Record your voice")
+
+if audio_value:
+    # Save the uploaded file to a temporary location for the SDK to read
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+        tmp_file.write(audio_value.getvalue())
+        tmp_path = tmp_file.name
+
+    if st.button("✨ Auto-Detect & Translate"):
+        lang, original, translated = translate_audio(tmp_path)
+        
+        if lang:
+            st.success(f"**Detected Language:** {lang}")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Original Transcription:**")
+                st.write(original)
+            with col2:
+                st.markdown("**English Translation:**")
+                st.info(translated)
+        else:
+            st.error(translated)
+            
+    # Cleanup temporary file
+    os.unlink(tmp_path)
+
 
 
 
