@@ -1,4 +1,4 @@
-streamlit
+streamlit>=1.40.0
 scipy
 numpy
 azure-cognitiveservices-speech==1.36.0
