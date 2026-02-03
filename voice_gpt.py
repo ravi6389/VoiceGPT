@@ -184,78 +184,73 @@ import streamlit as st
 import azure.cognitiveservices.speech as speechsdk
 import tempfile
 import os
+from pydub import AudioSegment
 
-st.title("🎙️ Auto-Detect & Translate to English")
+st.title("🎙️ Auto-Detect & Translate")
 
-# 1. Setup Azure Credentials (from Streamlit Secrets)
+# Azure Credentials
 AZURE_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
 AZURE_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
 
+def convert_to_wav(audio_input):
+    """Converts browser audio to Azure-compatible 16kHz Mono WAV"""
+    audio = AudioSegment.from_file(audio_input)
+    audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_wav:
+        audio.export(tmp_wav.name, format="wav")
+        return tmp_wav.name
+
 def translate_audio(audio_path):
-    # Configure Translation
     translation_config = speechsdk.translation.SpeechTranslationConfig(
         subscription=AZURE_SPEECH_KEY, 
         region=AZURE_SPEECH_REGION
     )
-    
-    # Target is always English
     translation_config.add_target_language("en")
     
-    # Setup Auto-Detection for potential source languages
-    # You can add up to 10 candidate languages
+    # Supported languages
     auto_detect_config = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
-        languages=["hi-IN", "ta-IN", "te-IN", "bn-IN", "es-ES", "fr-FR", "de-DE"]
+        languages=["hi-IN", "ta-IN", "te-IN", "bn-IN", "en-US", "es-ES"]
     )
 
     audio_config = speechsdk.audio.AudioConfig(filename=audio_path)
-    
-    # Create the recognizer with auto-detection
     recognizer = speechsdk.translation.TranslationRecognizer(
         translation_config=translation_config,
         audio_config=audio_config,
         auto_detect_source_language_config=auto_detect_config
     )
 
-    st.info("Analyzing audio and translating...")
     result = recognizer.recognize_once()
 
     if result.reason == speechsdk.ResultReason.TranslatedSpeech:
-        # Detected Language
-        detected_lang = result.properties.get(
-            speechsdk.PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult
-        )
-        return detected_lang, result.text, result.translations['en']
+        lang = result.properties.get(speechsdk.PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult)
+        return lang, result.text, result.translations['en']
     
-    return None, None, f"Error: {result.reason}"
+    elif result.reason == speechsdk.ResultReason.Canceled:
+        cancellation = result.cancellation_details
+        return None, None, f"Error: {cancellation.reason} - {cancellation.error_details}"
+    
+    return None, None, "Speech not recognized."
 
-# 2. Recording UI
+# UI Logic
 audio_value = st.audio_input("Record your voice")
 
 if audio_value:
-    # Save the uploaded file to a temporary location for the SDK to read
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
-        tmp_file.write(audio_value.getvalue())
-        tmp_path = tmp_file.name
-
     if st.button("✨ Auto-Detect & Translate"):
-        lang, original, translated = translate_audio(tmp_path)
+        # Step 1: Format Conversion
+        with st.spinner("Processing audio format..."):
+            fixed_wav_path = convert_to_wav(audio_value)
+        
+        # Step 2: Azure Translation
+        lang, original, translated = translate_audio(fixed_wav_path)
         
         if lang:
-            st.success(f"**Detected Language:** {lang}")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**Original Transcription:**")
-                st.write(original)
-            with col2:
-                st.markdown("**English Translation:**")
-                st.info(translated)
+            st.success(f"Detected: {lang}")
+            st.write(f"**Original:** {original}")
+            st.info(f"**English:** {translated}")
         else:
             st.error(translated)
             
-    # Cleanup temporary file
-    os.unlink(tmp_path)
-
-
-
-
-
+        # Cleanup
+        if os.path.exists(fixed_wav_path):
+            os.remove(fixed_wav_path)
