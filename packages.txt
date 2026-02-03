@@ -1,2 +1,4 @@
 ffmpeg
 libssl-dev
+ca-certificates
+libasound2
