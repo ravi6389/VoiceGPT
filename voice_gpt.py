@@ -186,14 +186,15 @@ import tempfile
 import os
 from pydub import AudioSegment
 
-st.title("🎙️ Cloud Translator (REST Mode)")
+st.title("🎙️ UK West Translator (Cloud REST)")
 
-# 1. Get Secrets
-AZURE_KEY = st.secrets["AZURE_SPEECH_KEY"]
-AZURE_REGION = st.secrets["AZURE_SPEECH_REGION"]  # e.g., "ukwest"
+# 1. Setup Secrets (Make sure these are in your Streamlit Cloud Secrets)
+AZURE_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
+AZURE_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"] # Should be "ukwest"
+AZURE_TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
 
-def process_and_translate(audio_input):
-    # Step A: Convert to 16kHz Mono WAV (Required for Azure)
+def get_transcription(audio_input):
+    # Convert to 16kHz Mono WAV (Mandatory for Azure)
     audio = AudioSegment.from_file(audio_input)
     audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
     
@@ -201,36 +202,51 @@ def process_and_translate(audio_input):
         audio.export(tmp.name, format="wav")
         with open(tmp.name, "rb") as f:
             audio_data = f.read()
-    
-    # Step B: Construct correct REST URL
-    # Note: REST API requires a specific language, e.g., 'hi-IN' or 'en-US'
-    url = f"https://{AZURE_REGION}://"
+
+    # CORRECTED URL: Prefix the region to the standard domain
+    stt_url = f"https://{AZURE_SPEECH_REGION}://"
     
     headers = {
-        "Ocp-Apim-Subscription-Key": AZURE_KEY,
+        "Ocp-Apim-Subscription-Key": AZURE_SPEECH_KEY,
         "Content-type": "audio/wav; codec=audio/pcm; samplerate=16000",
         "Accept": "application/json"
     }
 
-    try:
-        response = requests.post(url, headers=headers, data=audio_data)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        return {"error": str(e)}
-    finally:
-        if os.path.exists(tmp.name):
-            os.remove(tmp.name)
+    response = requests.post(stt_url, headers=headers, data=audio_data)
+    os.remove(tmp.name)
+    return response.json()
 
-# UI
+def translate_to_english(text):
+    # Azure Translator REST URL
+    translator_url = f"https://api.cognitive.microsofttranslator.com"
+    
+    headers = {
+        "Ocp-Apim-Subscription-Key": AZURE_TRANSLATOR_KEY,
+        "Ocp-Apim-Subscription-Region": AZURE_SPEECH_REGION,
+        "Content-type": "application/json"
+    }
+    
+    body = [{"text": text}]
+    response = requests.post(translator_url, headers=headers, json=body)
+    return response.json()
+
+# UI Workflow
 audio_value = st.audio_input("Record your voice")
 
 if audio_value:
-    if st.button("✨ Transcribe"):
-        with st.spinner("Processing via Azure..."):
-            result = process_and_translate(audio_value)
+    if st.button("📝 Transcribe & Translate"):
+        with st.spinner("Processing..."):
+            # Step 1: Speech to Text
+            stt_result = get_transcription(audio_value)
             
-            if "DisplayText" in result:
-                st.success(f"**Result:** {result['DisplayText']}")
+            if "DisplayText" in stt_result:
+                original_text = stt_result["DisplayText"]
+                st.write(f"**Original (Hindi):** {original_text}")
+                
+                # Step 2: Translate Text
+                trans_result = translate_to_english(original_text)
+                translated_text = trans_result[0]["translations"][0]["text"]
+                st.success(f"**English:** {translated_text}")
             else:
-                st.error(f"Failed: {result}")
+                st.error(f"STT Error: {stt_result}")
+
