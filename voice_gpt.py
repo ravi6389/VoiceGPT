@@ -208,12 +208,16 @@ def translate_audio(audio_path):
     )
     translation_config.add_target_language("en")
     
-    # Supported languages
+    # Crucial for Linux/Cloud: Set the speech recognition mode to conversation or dictation
+    translation_config.set_property(speechsdk.PropertyId.SpeechServiceConnection_TranslationVoice, "en-US-JennyNeural")
+
     auto_detect_config = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
-        languages=["hi-IN", "ta-IN", "te-IN", "bn-IN", "en-US", "es-ES"]
+        languages=["hi-IN", "ta-IN", "te-IN", "bn-IN", "en-US"]
     )
 
+    # Use a push stream for better compatibility with cloud environments
     audio_config = speechsdk.audio.AudioConfig(filename=audio_path)
+    
     recognizer = speechsdk.translation.TranslationRecognizer(
         translation_config=translation_config,
         audio_config=audio_config,
@@ -225,12 +229,12 @@ def translate_audio(audio_path):
     if result.reason == speechsdk.ResultReason.TranslatedSpeech:
         lang = result.properties.get(speechsdk.PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult)
         return lang, result.text, result.translations['en']
-    
     elif result.reason == speechsdk.ResultReason.Canceled:
-        cancellation = result.cancellation_details
-        return None, None, f"Error: {cancellation.reason} - {cancellation.error_details}"
+        details = result.cancellation_details
+        return None, None, f"Azure Error: {details.reason} - {details.error_details}"
     
-    return None, None, "Speech not recognized."
+    return None, None, "No speech detected."
+
 
 # UI Logic
 audio_value = st.audio_input("Record your voice")
@@ -254,3 +258,4 @@ if audio_value:
         # Cleanup
         if os.path.exists(fixed_wav_path):
             os.remove(fixed_wav_path)
+
