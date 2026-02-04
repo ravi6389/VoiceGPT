@@ -268,6 +268,7 @@ st.title("🎙️ REST-Only Voice Translator")
 # Secrets
 AZ_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
 AZ_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
+AZ_TRANSLATOR_REGION  = st.secrets["AZURE_TRANSLATOR_REGION"]
 AZ_TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
 AZ_TRANSLATOR_ENDPOINT = st.secrets.get("AZ_TRANSLATOR_ENDPOINT", "https://api.cognitive.microsofttranslator.com")
 
@@ -355,6 +356,7 @@ if audio_input:
             orig, trans = transcribe_and_translate(audio_input)
             st.write(f"**Original:** {orig}")
             st.success(f"**English:** {trans}")
+
 
 
 
