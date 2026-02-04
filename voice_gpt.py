@@ -257,108 +257,83 @@
 #                 st.success(f"**English:** {trans}")
 #             else:
 #                 st.error(orig)
-
 import streamlit as st
 import requests
+import uuid
 import tempfile
-import os
 from pydub import AudioSegment
-import azure.cognitiveservices.speech as speechsdk  # REQUIRED: pip install azure-cognitiveservices-speech
 
-st.title("🎙️ Universal Voice Translator (Auto-Detect)")
+st.title("🎙️ REST-Only Voice Translator")
 
-# Load Secrets
+# Secrets
 AZ_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
 AZ_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
 AZ_TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
-AZ_TRANSLATOR_ENDPOINT = "https://api.cognitive.microsofttranslator.com"
+AZ_TRANSLATOR_ENDPOINT = st.secrets.get("AZ_TRANSLATOR_ENDPOINT", "https://api.cognitive.microsofttranslator.com")
 
-def transcribe_and_translate(audio_file):
+def transcribe_and_translate_rest(audio_file):
     try:
-        # 1️⃣ PREPARE AUDIO
-        # Streamlit returns a file-like object; we must save it as a WAV file for the SDK
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_wav:
-            audio = AudioSegment.from_file(audio_file)
-            # Azure Speech SDK prefers 16kHz, 16-bit, Mono
-            audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
-            audio.export(tmp_wav.name, format="wav")
-            tmp_wav_path = tmp_wav.name
+        # 1️⃣ Process Audio for REST (Must be WAV 16k mono)
+        audio = AudioSegment.from_file(audio_file)
+        audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
 
-        # 2️⃣ SPEECH-TO-TEXT (With Auto-Detect)
-        speech_config = speechsdk.SpeechConfig(subscription=AZ_SPEECH_KEY, region=AZ_SPEECH_REGION)
-        
-        # Configure Auto-Detection (LID)
-        # You MUST specify candidate languages (Azure cannot scan all 100+ at once for speech)
-        # Add the languages you expect users to speak (e.g., Hindi, English, Tamil, etc.)
-        auto_detect_config = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
-            languages=["hi-IN", "en-US", "ta-IN", "te-IN"] 
-        )
-        
-        audio_config = speechsdk.audio.AudioConfig(filename=tmp_wav_path)
-        recognizer = speechsdk.SpeechRecognizer(
-            speech_config=speech_config, 
-            auto_detect_source_language_config=auto_detect_config, 
-            audio_config=audio_config
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            audio.export(tmp.name, format="wav")
+            wav_bytes = open(tmp.name, "rb").read()
+
+        # 2️⃣ Speech-to-Text REST
+        # Note: REST requires a 'language' param. For India, hi-IN is a safe broad base.
+        stt_url = (
+            f"https://{AZ_SPEECH_REGION}://"
+            "speech/recognition/conversation/cognitiveservices/v1"
+            "?language=hi-IN" 
         )
 
-        # Perform recognition
-        result = recognizer.recognize_once()
-
-        # Cleanup temp file
-        os.remove(tmp_wav_path)
-
-        # Handle Results
-        if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-            detected_src_lang = result.properties.get(speechsdk.PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult)
-            original_text = result.text
-        elif result.reason == speechsdk.ResultReason.NoMatch:
-            return "No speech could be recognized.", ""
-        elif result.reason == speechsdk.ResultReason.Canceled:
-            cancellation = result.cancellation_details
-            return f"Speech Error: {cancellation.reason} - {cancellation.error_details}", ""
-        else:
-            return "Unknown error during transcription.", ""
-
-        # 3️⃣ TRANSLATE TO ENGLISH (Azure Translator REST API)
-        # We intentionally OMIT the 'from' parameter so Translator relies on the text or the STT result
-        trans_url = f"{AZ_TRANSLATOR_ENDPOINT}/translate?api-version=3.0&to=en"
-        
-        trans_headers = {
-            "Ocp-Apim-Subscription-Key": AZ_TRANSLATOR_KEY,
-            "Ocp-Apim-Subscription-Region": AZ_SPEECH_REGION, # Ensure this matches your Translator resource region
-            "Content-Type": "application/json",
+        stt_headers = {
+            "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
+            "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+            "Accept": "application/json",
         }
 
-        # Pass the transcribed text
-        body = [{"text": original_text}]
-        response = requests.post(trans_url, headers=trans_headers, json=body)
-        
-        if response.status_code != 200:
-            return f"Translation Error: {response.text}", ""
-            
-        translation_json = response.json()
-        translated_text = translation_json[0]["translations"][0]["text"]
+        stt_response = requests.post(stt_url, headers=stt_headers, data=wav_bytes)
+        if stt_response.status_code != 200:
+            return f"STT Error: {stt_response.text}", ""
 
-        return original_text, translated_text
+        original_text = stt_response.json().get("DisplayText", "")
+        if not original_text:
+            return "No speech detected.", ""
+
+        # 3️⃣ Translator REST (AUTO-DETECT enabled here)
+        # By removing the '&from=' parameter, Azure Translator auto-detects the text language
+        trans_url = f"{AZ_TRANSLATOR_ENDPOINT}/translate?api-version=3.0&to=en"
+
+        trans_headers = {
+            "Ocp-Apim-Subscription-Key": AZ_TRANSLATOR_KEY,
+            "Ocp-Apim-Subscription-Region": AZ_SPEECH_REGION,
+            "Content-Type": "application/json",
+            "X-ClientTraceId": str(uuid.uuid4())
+        }
+
+        body = [{"text": original_text}]
+        t_response = requests.post(trans_url, headers=trans_headers, json=body)
+        
+        if t_response.status_code != 200:
+            return f"Translation Error: {t_response.text}", ""
+            
+        translation = t_response.json()[0]["translations"][0]["text"]
+
+        return original_text, translation
 
     except Exception as e:
-        return f"Critical Error: {str(e)}", ""
+        return f"Error: {str(e)}", ""
 
-# -----------------------------------------------------------
-# UI
-# -----------------------------------------------------------
-audio_input = st.audio_input("Record Voice (Hindi, English, Tamil, Telugu)")
+# UI Logic
+audio_input = st.audio_input("Record your voice")
 
 if audio_input:
-    if st.button("Transcribe & Translate"):
-        with st.spinner("Listening and Translating..."):
-            orig, trans = transcribe_and_translate(audio_input)
+    if st.button("Translate"):
+        with st.spinner("Processing via REST API..."):
+            orig, trans = transcribe_and_translate_rest(audio_input)
+            st.write(f"**Original:** {orig}")
+            st.success(f"**English:** {trans}")
 
-            if "Error" in orig:
-                st.error(orig)
-            else:
-                st.subheader("📄 Detected Speech")
-                st.info(f"\"{orig}\"")
-                
-                st.subheader("🌍 English Translation")
-                st.success(f"\"{trans}\"")
