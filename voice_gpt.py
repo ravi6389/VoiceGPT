@@ -284,17 +284,17 @@ def transcribe_and_translate_rest(audio_file):
         # 2️⃣ Speech-to-Text REST
         # Note: REST requires a 'language' param. For India, hi-IN is a safe broad base.
         stt_url = (
-            f"https://{AZ_SPEECH_REGION}://"
-            "speech/recognition/conversation/cognitiveservices/v1"
-            "?language=hi-IN" 
+        f"https://{AZ_SPEECH_REGION}://"
+        "speech/recognition/conversation/cognitiveservices/v1"
+        "?language=hi-IN"
         )
-
+        st.write('stt_url is...', stt_url)
         stt_headers = {
             "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
             "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
             "Accept": "application/json",
         }
-
+        st.write('stt_headers are...', stt_headers)
         stt_response = requests.post(stt_url, headers=stt_headers, data=wav_bytes)
         if stt_response.status_code != 200:
             return f"STT Error: {stt_response.text}", ""
@@ -305,8 +305,11 @@ def transcribe_and_translate_rest(audio_file):
 
         # 3️⃣ Translator REST (AUTO-DETECT enabled here)
         # By removing the '&from=' parameter, Azure Translator auto-detects the text language
-        trans_url = f"{AZ_TRANSLATOR_ENDPOINT}/translate?api-version=3.0&to=en"
-
+        trans_url = (
+    "https://api.cognitive.microsofttranslator.com"
+    "?api-version=3.0&to=en"
+)
+        st.write('trans_url is...', trans_url)
         trans_headers = {
             "Ocp-Apim-Subscription-Key": AZ_TRANSLATOR_KEY,
             "Ocp-Apim-Subscription-Region": AZ_SPEECH_REGION,
@@ -336,4 +339,5 @@ if audio_input:
             orig, trans = transcribe_and_translate_rest(audio_input)
             st.write(f"**Original:** {orig}")
             st.success(f"**English:** {trans}")
+
 
