@@ -259,21 +259,24 @@
 #                 st.error(orig)
 import streamlit as st
 import requests
+import uuid
 import tempfile
 from pydub import AudioSegment
-import uuid
 
-st.title("🎙️ Auto-Detect Voice → English Translator (REST Only)")
+st.set_page_config(page_title="Azure Voice Translator", layout="centered")
+st.title("🎙️ Azure REST Speech → English Translator")
 
-# Secrets
+# Required Azure Keys
 AZ_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
-AZ_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
+AZ_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]  # e.g., 'ukwest'
+
 AZ_TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
 AZ_TRANSLATOR_REGION = st.secrets["AZURE_TRANSLATOR_REGION"]
 
+
 def transcribe_and_translate(audio_file):
 
-    # Convert to 16kHz mono PCM WAV
+    # Convert audio to correct WAV format
     audio = AudioSegment.from_file(audio_file)
     audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
 
@@ -281,47 +284,44 @@ def transcribe_and_translate(audio_file):
         audio.export(tmp.name, format="wav")
         audio_bytes = open(tmp.name, "rb").read()
 
-    # -------------------------------------------------
-    # 1️⃣ SPEECH TO TEXT (REST - Auto Language Detect)
-    # -------------------------------------------------
+    # ----------------------------
+    # 1️⃣ SPEECH TO TEXT (AUTO-DETECT)
+    # ----------------------------
+
     stt_url = (
-    f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
-    "speech/recognition/dictation/cognitiveservices/v1"
+        f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
+        "speech/recognition/conversation/cognitiveservices/v1"
+        "?language=hi-IN"
     )
-    
+
     stt_headers = {
-    "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
-    "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
-    "Accept": "application/json",
-    "X-Microsoft-Detect-Language": "true"
+        "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
+        "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+        "Accept": "application/json",
+        "X-Microsoft-OutputFormat": "detailed"
     }
 
+    st.write("🔍 Calling STT endpoint:", stt_url)
+
     stt_response = requests.post(stt_url, headers=stt_headers, data=audio_bytes)
-
-
-    st.write("STT URL:", stt_url)
-    st.write("STT Headers:", stt_headers)
-
-    # stt_response = requests.post(stt_url, headers=stt_headers, data=audio_bytes)
-    stt_response = requests.post(stt_url, headers=stt_headers, data=audio_bytes)    
-
-    st.write("STT Raw Response:", stt_response.text)
 
     if stt_response.status_code != 200:
         return f"STT Error: {stt_response.text}", ""
 
     stt_json = stt_response.json()
-    transcript = stt_json.get("DisplayText", "")
+    st.write("STT Response:", stt_json)
 
+    transcript = stt_json.get("DisplayText", "")
     if not transcript:
         return "No speech detected.", ""
 
-    # -------------------------------------------------
-    # 2️⃣ TRANSLATION → ENGLISH
-    # -------------------------------------------------
+    # ----------------------------
+    # 2️⃣ TRANSLATE TO ENGLISH
+    # ----------------------------
+
     trans_url = (
-        "https://api.cognitive.microsofttranslator.com/"
-        "translate?api-version=3.0&to=en"
+        "https://api.cognitive.microsofttranslator.com/translate"
+        "?api-version=3.0&to=en"
     )
 
     trans_headers = {
@@ -331,6 +331,7 @@ def transcribe_and_translate(audio_file):
     }
 
     body = [{"text": transcript}]
+
     trans_response = requests.post(trans_url, headers=trans_headers, json=body)
 
     if trans_response.status_code != 200:
@@ -341,23 +342,19 @@ def transcribe_and_translate(audio_file):
     return transcript, translation
 
 
-# ---------------------- UI --------------------------
-audio_input = st.audio_input("Record your voice")
+# ----------------------------
+# UI Section
+# ----------------------------
+
+audio_input = st.audio_input("🎤 Record your voice (Any Indian language)")
 
 if audio_input:
-    if st.button("Translate"):
+    if st.button("Translate to English"):
         with st.spinner("Processing…"):
-            orig, trans = transcribe_and_translate(audio_input)
+            original, translated = transcribe_and_translate(audio_input)
 
-        st.subheader("📝 Original Detected Speech:")
-        st.write(orig)
+            st.subheader("📝 Original Speech")
+            st.write(original)
 
-        st.subheader("🌍 English Translation:")
-        st.success(trans)
-
-
-
-
-
-
-
+            st.subheader("🌍 English Translation")
+            st.success(translated)
