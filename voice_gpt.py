@@ -1,4 +1,4 @@
-import streamlit as st
+?import streamlit as st
 import requests
 import uuid
 import tempfile
@@ -38,7 +38,7 @@ def transcribe_and_translate(audio_file):
 
     stt_url = (
         f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
-        "speech/recognition/dictation/cognitiveservices/v1"
+        "speech/recognition/dictation/cognitiveservices/v1?language=en-US"
     )
     
     stt_headers = {
@@ -106,6 +106,7 @@ if audio_input:
 
             st.subheader("🌍 English Translation")
             st.success(translated)
+
 
 
 
