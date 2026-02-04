@@ -270,19 +270,22 @@ AZ_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
 AZ_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
 AZ_TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
 
+# -----------------------------------------------------------
+# 1️⃣ MAIN FUNCTION
+# -----------------------------------------------------------
 def transcribe_and_translate(audio_file):
     try:
-        # Convert to 16k mono wav
+        # Convert to proper WAV
         audio = AudioSegment.from_file(audio_file)
         audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
             audio.export(tmp.name, format="wav")
-            wav_data = open(tmp.name, "rb").read()
+            wav_bytes = open(tmp.name, "rb").read()
 
-        # --------------------------
-        # 1️⃣ SPEECH-TO-TEXT (Azure REST)
-        # --------------------------
+        # ---------------------------------------------------
+        # 2️⃣ Azure Speech-to-Text
+        # ---------------------------------------------------
         stt_url = (
             f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
             "speech/recognition/conversation/cognitiveservices/v1"
@@ -292,10 +295,12 @@ def transcribe_and_translate(audio_file):
         stt_headers = {
             "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
             "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+            "Accept": "application/json",
         }
 
-        stt_response = requests.post(stt_url, headers=stt_headers, data=wav_data)
+        stt_response = requests.post(stt_url, headers=stt_headers, data=wav_bytes)
 
+        # Show raw error text so we know EXACT reason
         if stt_response.status_code != 200:
             return f"STT Error: {stt_response.text}", ""
 
@@ -303,11 +308,11 @@ def transcribe_and_translate(audio_file):
         text = stt_json.get("DisplayText", "")
 
         if not text:
-            return "Could not detect speech.", ""
+            return "No speech detected.", ""
 
-        # --------------------------
-        # 2️⃣ Translate to English
-        # --------------------------
+        # ---------------------------------------------------
+        # 3️⃣ Translate to English
+        # ---------------------------------------------------
         trans_url = (
             "https://api.cognitive.microsofttranslator.com/translate"
             "?api-version=3.0&to=en"
@@ -320,9 +325,8 @@ def transcribe_and_translate(audio_file):
         }
 
         body = [{"text": text}]
-        trans_response = requests.post(trans_url, headers=trans_headers, json=body)
-
-        translation = trans_response.json()[0]["translations"][0]["text"]
+        t = requests.post(trans_url, headers=trans_headers, json=body)
+        translation = t.json()[0]["translations"][0]["text"]
 
         return text, translation
 
@@ -330,17 +334,19 @@ def transcribe_and_translate(audio_file):
         return f"Error: {str(e)}", ""
 
 
-# -----------------------
-# UI
-# -----------------------
+# -----------------------------------------------------------
+# USER INTERFACE
+# -----------------------------------------------------------
 audio_input = st.audio_input("Record your voice (any Indian language)")
 
 if audio_input:
     if st.button("Translate to English"):
         with st.spinner("Processing..."):
             orig, trans = transcribe_and_translate(audio_input)
+
             st.subheader("📄 Original Speech")
             st.write(orig)
 
             st.subheader("🌍 English Translation")
             st.success(trans)
+
