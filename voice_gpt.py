@@ -267,15 +267,19 @@ import os
 # CONFIG
 # -------------------------------------------------------
 AZURE_SPEECH_KEY      = st.secrets["AZURE_SPEECH_KEY"]
-AZURE_SPEECH_REGION   = st.secrets["AZURE_SPEECH_REGION"]
+AZURE_SPEECH_REGION   = st.secrets["AZURE_SPEECH_REGION"]  # ukwest
 AZURE_TRANSLATOR_KEY  = st.secrets["AZURE_TRANSLATOR_KEY"]
 AZURE_TRANSLATOR_REGION = st.secrets["AZURE_TRANSLATOR_REGION"]
 
-# STT endpoint
-SPEECH_ENDPOINT = f"https://{AZURE_SPEECH_REGION}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1"
+# Correct Speech REST URL
+SPEECH_URL = (
+    f"https://{AZURE_SPEECH_REGION}.stt.speech.microsoft.com/"
+    "speech/recognition/conversation/cognitiveservices/v1"
+    "?language=auto&format=detailed"
+)
 
 # Translator endpoint
-TRANSLATE_ENDPOINT = (
+TRANSLATE_URL = (
     "https://api.cognitive.microsofttranslator.com/translate"
     "?api-version=3.0&to=en"
 )
@@ -287,42 +291,32 @@ st.title("🎙️ Voice → English Translator (Azure REST API)")
 # -------------------------------------------------------
 def transcribe_and_translate(audio_file):
     try:
-        # Save uploaded audio to temporary WAV file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
             tmp.write(audio_file.read())
             wav_path = tmp.name
 
         # -----------------------------
-        # 1. Azure Speech-to-Text
+        # 1. Azure Speech-to-Text (REST)
         # -----------------------------
-
         stt_headers = {
             "Ocp-Apim-Subscription-Key": AZURE_SPEECH_KEY,
             "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
         }
 
-        params = {
-            "language": "hi-IN",       # Default (ignored when auto-detect)
-            "format": "detailed",
-        }
-
-        # AUTO-DETECT languages (Hindi, Tamil, Telugu, Kannada, Malayalam etc.)
-        auto_lang = (
-            "auto-detect"
-        )  
-
-        stt_url = (
-            f"{SPEECH_ENDPOINT}?language={auto_lang}&format=detailed"
-        )
-
         with open(wav_path, "rb") as f:
             stt_response = requests.post(
-                stt_url, headers=stt_headers, data=f.read()
+                SPEECH_URL,
+                headers=stt_headers,
+                data=f.read()
             )
+
+        # Azure returns empty when bad URL → we catch it
+        if stt_response.status_code != 200:
+            return f"Azure STT Error: {stt_response.text}", ""
 
         result_json = stt_response.json()
 
-        # Extract text
+        # Extract recognized text
         if "DisplayText" in result_json:
             transcription = result_json["DisplayText"]
         else:
@@ -336,13 +330,17 @@ def transcribe_and_translate(audio_file):
             "Ocp-Apim-Subscription-Region": AZURE_TRANSLATOR_REGION,
             "Content-Type": "application/json",
         }
-        body = [{"text": transcription}]
 
+        body = [{"text": transcription}]
         trans_response = requests.post(
-            TRANSLATE_ENDPOINT,
+            TRANSLATE_URL,
             headers=trans_headers,
             json=body
         )
+
+        if trans_response.status_code != 200:
+            return transcription, f"Translation Error: {trans_response.text}"
+
         translation = trans_response.json()[0]["translations"][0]["text"]
 
         return transcription, translation
@@ -350,14 +348,15 @@ def transcribe_and_translate(audio_file):
     except Exception as e:
         return f"Error: {str(e)}", ""
 
+
 # -------------------------------------------------------
 # UI
 # -------------------------------------------------------
-audio_input = st.audio_input("🎤 Record your voice (Hindi, Tamil, Telugu etc.)")
+audio_input = st.audio_input("🎤 Record your voice (any Indian language)")
 
 if audio_input:
     if st.button("Translate to English"):
-        with st.spinner("Processing... Please wait..."):
+        with st.spinner("Processing..."):
             original, english = transcribe_and_translate(audio_input)
 
         st.subheader("📝 Original Speech")
@@ -365,3 +364,4 @@ if audio_input:
 
         st.subheader("🌍 English Translation")
         st.success(english)
+
