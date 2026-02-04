@@ -352,9 +352,10 @@ audio_input = st.audio_input("Record your voice")
 if audio_input:
     if st.button("Translate"):
         with st.spinner("Processing via REST API..."):
-            orig, trans = transcribe_and_translate_rest(audio_input)
+            orig, trans = transcribe_and_translate(audio_input)
             st.write(f"**Original:** {orig}")
             st.success(f"**English:** {trans}")
+
 
 
 
