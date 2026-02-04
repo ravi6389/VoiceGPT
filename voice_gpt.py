@@ -37,7 +37,7 @@ def transcribe_and_translate(audio_file):
 
     stt_url = (
         f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
-        "speech/recognition/conversation/cognitiveservices/v1"
+        "speech/recognition/dictation/cognitiveservices/v1"
     )
     
     stt_headers = {
@@ -105,6 +105,7 @@ if audio_input:
 
             st.subheader("🌍 English Translation")
             st.success(translated)
+
 
 
 
