@@ -285,22 +285,25 @@ def transcribe_and_translate(audio_file):
     # 1️⃣ SPEECH TO TEXT (REST - Auto Language Detect)
     # -------------------------------------------------
     stt_url = (
-        f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
-        "speech/recognition/conversation/cognitiveservices/v1"
+    f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
+    "speech/recognition/dictation/cognitiveservices/v1"
     )
-
+    
     stt_headers = {
-        "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
-        "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
-        "Accept": "application/json",
-        "X-Microsoft-Detect-Language": "true",    # 🔥 AUTO LANGUAGE DETECT
-        "X-RequestId": str(uuid.uuid4())          # optional request ID
+    "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
+    "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+    "Accept": "application/json",
+    "X-Microsoft-Detect-Language": "true"
     }
+
+    stt_response = requests.post(stt_url, headers=stt_headers, data=audio_bytes)
+
 
     st.write("STT URL:", stt_url)
     st.write("STT Headers:", stt_headers)
 
-    stt_response = requests.post(stt_url, headers=stt_headers, data=audio_bytes)
+    # stt_response = requests.post(stt_url, headers=stt_headers, data=audio_bytes)
+    stt_response = requests.post(stt_url, headers=stt_headers, data=audio_bytes)    
 
     st.write("STT Raw Response:", stt_response.text)
 
@@ -351,6 +354,7 @@ if audio_input:
 
         st.subheader("🌍 English Translation:")
         st.success(trans)
+
 
 
 
