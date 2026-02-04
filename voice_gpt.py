@@ -14,8 +14,8 @@ AZ_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]  # e.g., 'ukwest'
 AZ_TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
 AZ_TRANSLATOR_REGION = st.secrets["AZURE_TRANSLATOR_REGION"]
 
-st.write('AZ_SPEECH_KEY is..', AZ_SPEECH_KEY)
-st.write('AZ_SPEECH_REGION is..', AZ_SPEECH_REGION)
+# st.write('AZ_SPEECH_KEY is..', AZ_SPEECH_KEY)
+# st.write('AZ_SPEECH_REGION is..', AZ_SPEECH_REGION)
 def transcribe_and_translate(audio_file):
 
     # Convert audio to correct WAV format
@@ -106,6 +106,7 @@ if audio_input:
 
             st.subheader("🌍 English Translation")
             st.success(translated)
+
 
 
 
