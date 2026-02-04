@@ -365,4 +365,3 @@ if audio_input:
 
         st.subheader("🌍 English Translation")
         st.success(english)
-
