@@ -292,7 +292,7 @@ def transcribe_and_translate(audio_file):
     stt_url = (
         f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
         "speech/recognition/conversation/cognitiveservices/v1"
-        "?language=hi-IN"
+        "?language=auto"
     )
 
     stt_headers = {
@@ -356,6 +356,7 @@ if audio_input:
             orig, trans = transcribe_and_translate(audio_input)
             st.write(f"**Original:** {orig}")
             st.success(f"**English:** {trans}")
+
 
 
 
