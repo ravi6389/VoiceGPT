@@ -45,7 +45,7 @@ def transcribe_and_translate(audio_file):
         "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
         "Accept": "application/json",
         "X-Microsoft-OutputFormat": "detailed",
-        "X-Microsoft-Detect-Language": true
+        "X-Microsoft-Detect-Language": "true"
     }
 
     st.write("🔍 Calling STT endpoint:", stt_url)
@@ -105,5 +105,6 @@ if audio_input:
 
             st.subheader("🌍 English Translation")
             st.success(translated)
+
 
 
