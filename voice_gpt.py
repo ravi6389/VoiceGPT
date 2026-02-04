@@ -259,25 +259,21 @@
 #                 st.error(orig)
 import streamlit as st
 import requests
-import uuid
 import tempfile
 from pydub import AudioSegment
+import uuid
 
-st.title("🎙️ REST-Only Voice Translator")
+st.title("🎙️ Auto-Detect Voice → English Translator (REST Only)")
 
 # Secrets
 AZ_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
 AZ_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
-AZ_TRANSLATOR_REGION  = st.secrets["AZURE_TRANSLATOR_REGION"]
 AZ_TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
-AZ_TRANSLATOR_ENDPOINT = st.secrets.get("AZ_TRANSLATOR_ENDPOINT", "https://api.cognitive.microsofttranslator.com")
-
-st.write("Speech Key:", AZ_SPEECH_KEY)
-st.write("Region:", AZ_SPEECH_REGION)
+AZ_TRANSLATOR_REGION = st.secrets["AZURE_TRANSLATOR_REGION"]
 
 def transcribe_and_translate(audio_file):
 
-    # Convert to proper WAV
+    # Convert to 16kHz mono PCM WAV
     audio = AudioSegment.from_file(audio_file)
     audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
 
@@ -285,20 +281,20 @@ def transcribe_and_translate(audio_file):
         audio.export(tmp.name, format="wav")
         audio_bytes = open(tmp.name, "rb").read()
 
-    # ---------------------------
-    # 1️⃣  SPEECH TO TEXT (REST)
-    # ---------------------------
-
+    # -------------------------------------------------
+    # 1️⃣ SPEECH TO TEXT (REST - Auto Language Detect)
+    # -------------------------------------------------
     stt_url = (
         f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
         "speech/recognition/conversation/cognitiveservices/v1"
-        "?language=auto"
     )
 
     stt_headers = {
         "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
-        "Content-Type": "audio/wav; codec=audio/pcm; samplerate=16000",
-        "Accept": "application/json"
+        "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+        "Accept": "application/json",
+        "X-Microsoft-Detect-Language": "true",    # 🔥 AUTO LANGUAGE DETECT
+        "X-RequestId": str(uuid.uuid4())          # optional request ID
     }
 
     st.write("STT URL:", stt_url)
@@ -306,20 +302,20 @@ def transcribe_and_translate(audio_file):
 
     stt_response = requests.post(stt_url, headers=stt_headers, data=audio_bytes)
 
+    st.write("STT Raw Response:", stt_response.text)
+
     if stt_response.status_code != 200:
         return f"STT Error: {stt_response.text}", ""
 
     stt_json = stt_response.json()
-    st.write("STT Raw Response:", stt_json)
-
     transcript = stt_json.get("DisplayText", "")
+
     if not transcript:
         return "No speech detected.", ""
 
-    # ---------------------------
-    # 2️⃣  TRANSLATOR (REST)
-    # ---------------------------
-
+    # -------------------------------------------------
+    # 2️⃣ TRANSLATION → ENGLISH
+    # -------------------------------------------------
     trans_url = (
         "https://api.cognitive.microsofttranslator.com/"
         "translate?api-version=3.0&to=en"
@@ -332,11 +328,6 @@ def transcribe_and_translate(audio_file):
     }
 
     body = [{"text": transcript}]
-
-    st.write("Translator URL:", trans_url)
-    st.write("Translator Headers:", trans_headers)
-    st.write("Translator Body:", body)
-
     trans_response = requests.post(trans_url, headers=trans_headers, json=body)
 
     if trans_response.status_code != 200:
@@ -347,18 +338,19 @@ def transcribe_and_translate(audio_file):
     return transcript, translation
 
 
-# UI Logic
+# ---------------------- UI --------------------------
 audio_input = st.audio_input("Record your voice")
 
 if audio_input:
     if st.button("Translate"):
-        with st.spinner("Processing via REST API..."):
+        with st.spinner("Processing…"):
             orig, trans = transcribe_and_translate(audio_input)
-            st.write(f"**Original:** {orig}")
-            st.success(f"**English:** {trans}")
 
+        st.subheader("📝 Original Detected Speech:")
+        st.write(orig)
 
-
+        st.subheader("🌍 English Translation:")
+        st.success(trans)
 
 
 
