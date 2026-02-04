@@ -271,6 +271,9 @@ AZ_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
 AZ_TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
 AZ_TRANSLATOR_ENDPOINT = st.secrets.get("AZ_TRANSLATOR_ENDPOINT", "https://api.cognitive.microsofttranslator.com")
 
+st.write("Speech Key:", AZ_SPEECH_KEY)
+st.write("Region:", AZ_SPEECH_REGION)
+
 def transcribe_and_translate_rest(audio_file):
     try:
         # 1️⃣ Process Audio for REST (Must be WAV 16k mono)
@@ -343,6 +346,7 @@ if audio_input:
             orig, trans = transcribe_and_translate_rest(audio_input)
             st.write(f"**Original:** {orig}")
             st.success(f"**English:** {trans}")
+
 
 
 
