@@ -29,17 +29,23 @@ def transcribe_and_translate(audio_file):
     # 1️⃣ SPEECH TO TEXT (AUTO-DETECT)
     # ----------------------------
 
+    # stt_url = (
+    #     f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
+    #     "speech/recognition/conversation/cognitiveservices/v1"
+    #     "?language=hi-IN"
+    # )
+
     stt_url = (
         f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
         "speech/recognition/conversation/cognitiveservices/v1"
-        "?language=hi-IN"
     )
-
+    
     stt_headers = {
         "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
         "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
         "Accept": "application/json",
-        "X-Microsoft-OutputFormat": "detailed"
+        "X-Microsoft-OutputFormat": "detailed",
+        X-Microsoft-Detect-Language: true
     }
 
     st.write("🔍 Calling STT endpoint:", stt_url)
@@ -99,3 +105,4 @@ if audio_input:
 
             st.subheader("🌍 English Translation")
             st.success(translated)
+
