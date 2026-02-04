@@ -284,10 +284,11 @@ def transcribe_and_translate_rest(audio_file):
         # 2️⃣ Speech-to-Text REST
         # Note: REST requires a 'language' param. For India, hi-IN is a safe broad base.
         stt_url = (
-        f"https://{AZ_SPEECH_REGION}://"
-        "speech/recognition/conversation/cognitiveservices/v1"
-        "?language=hi-IN"
-        )
+    f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
+    "speech/recognition/conversation/cognitiveservices/v1"
+    "?language=hi-IN"
+)
+
         st.write('stt_url is...', stt_url)
         stt_headers = {
             "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
@@ -342,6 +343,7 @@ if audio_input:
             orig, trans = transcribe_and_translate_rest(audio_input)
             st.write(f"**Original:** {orig}")
             st.success(f"**English:** {trans}")
+
 
 
 
