@@ -274,68 +274,77 @@ AZ_TRANSLATOR_ENDPOINT = st.secrets.get("AZ_TRANSLATOR_ENDPOINT", "https://api.c
 st.write("Speech Key:", AZ_SPEECH_KEY)
 st.write("Region:", AZ_SPEECH_REGION)
 
-def transcribe_and_translate_rest(audio_file):
-    try:
-        # 1️⃣ Process Audio for REST (Must be WAV 16k mono)
-        audio = AudioSegment.from_file(audio_file)
-        audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+def transcribe_and_translate(audio_file):
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            audio.export(tmp.name, format="wav")
-            wav_bytes = open(tmp.name, "rb").read()
+    # Convert to proper WAV
+    audio = AudioSegment.from_file(audio_file)
+    audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
 
-        # 2️⃣ Speech-to-Text REST
-        # Note: REST requires a 'language' param. For India, hi-IN is a safe broad base.
-        stt_url = (
-    f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
-    "speech/recognition/conversation/cognitiveservices/v1"
-    "?language=hi-IN"
-)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        audio.export(tmp.name, format="wav")
+        audio_bytes = open(tmp.name, "rb").read()
 
-        st.write('stt_url is...', stt_url)
-        stt_headers = {
-            "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
-            "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
-            "Accept": "application/json",
-        }
-        st.write('stt_headers are...', stt_headers)
+    # ---------------------------
+    # 1️⃣  SPEECH TO TEXT (REST)
+    # ---------------------------
 
-        trans_url = (
-    "https://api.cognitive.microsofttranslator.com"
-    "?api-version=3.0&to=en"
-)
-        st.write('trans_url is...', trans_url)
-        stt_response = requests.post(stt_url, headers=stt_headers, data=wav_bytes)
-        st.write(stt_response)
-        if stt_response.status_code != 200:
-            return f"STT Error: {stt_response.text}", ""
+    stt_url = (
+        f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
+        "speech/recognition/conversation/cognitiveservices/v1"
+        "?language=hi-IN"
+    )
 
-        original_text = stt_response.json().get("DisplayText", "")
-        if not original_text:
-            return "No speech detected.", ""
+    stt_headers = {
+        "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
+        "Content-Type": "audio/wav; codec=audio/pcm; samplerate=16000",
+        "Accept": "application/json"
+    }
 
-        # 3️⃣ Translator REST (AUTO-DETECT enabled here)
-        # By removing the '&from=' parameter, Azure Translator auto-detects the text language
+    st.write("STT URL:", stt_url)
+    st.write("STT Headers:", stt_headers)
 
-        trans_headers = {
-            "Ocp-Apim-Subscription-Key": AZ_TRANSLATOR_KEY,
-            "Ocp-Apim-Subscription-Region": AZ_SPEECH_REGION,
-            "Content-Type": "application/json",
-            "X-ClientTraceId": str(uuid.uuid4())
-        }
+    stt_response = requests.post(stt_url, headers=stt_headers, data=audio_bytes)
 
-        body = [{"text": original_text}]
-        t_response = requests.post(trans_url, headers=trans_headers, json=body)
-        
-        if t_response.status_code != 200:
-            return f"Translation Error: {t_response.text}", ""
-            
-        translation = t_response.json()[0]["translations"][0]["text"]
+    if stt_response.status_code != 200:
+        return f"STT Error: {stt_response.text}", ""
 
-        return original_text, translation
+    stt_json = stt_response.json()
+    st.write("STT Raw Response:", stt_json)
 
-    except Exception as e:
-        return f"Error: {str(e)}", ""
+    transcript = stt_json.get("DisplayText", "")
+    if not transcript:
+        return "No speech detected.", ""
+
+    # ---------------------------
+    # 2️⃣  TRANSLATOR (REST)
+    # ---------------------------
+
+    trans_url = (
+        "https://api.cognitive.microsofttranslator.com/"
+        "translate?api-version=3.0&to=en"
+    )
+
+    trans_headers = {
+        "Ocp-Apim-Subscription-Key": AZ_TRANSLATOR_KEY,
+        "Ocp-Apim-Subscription-Region": AZ_TRANSLATOR_REGION,
+        "Content-Type": "application/json"
+    }
+
+    body = [{"text": transcript}]
+
+    st.write("Translator URL:", trans_url)
+    st.write("Translator Headers:", trans_headers)
+    st.write("Translator Body:", body)
+
+    trans_response = requests.post(trans_url, headers=trans_headers, json=body)
+
+    if trans_response.status_code != 200:
+        return transcript, f"Translation Error: {trans_response.text}"
+
+    translation = trans_response.json()[0]["translations"][0]["text"]
+
+    return transcript, translation
+
 
 # UI Logic
 audio_input = st.audio_input("Record your voice")
@@ -346,6 +355,7 @@ if audio_input:
             orig, trans = transcribe_and_translate_rest(audio_input)
             st.write(f"**Original:** {orig}")
             st.success(f"**English:** {trans}")
+
 
 
 
