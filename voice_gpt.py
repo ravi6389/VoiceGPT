@@ -262,106 +262,85 @@ import streamlit as st
 import requests
 import tempfile
 import os
-
-# -------------------------------------------------------
-# CONFIG
-# -------------------------------------------------------
-AZURE_SPEECH_KEY      = st.secrets["AZURE_SPEECH_KEY"]
-AZURE_SPEECH_REGION   = st.secrets["AZURE_SPEECH_REGION"]  # ukwest
-AZURE_TRANSLATOR_KEY  = st.secrets["AZURE_TRANSLATOR_KEY"]
-AZURE_TRANSLATOR_REGION = st.secrets["AZURE_TRANSLATOR_REGION"]
-
-# Correct Speech REST URL
-SPEECH_URL = (
-    f"https://{AZURE_SPEECH_REGION}.stt.speech.microsoft.com/"
-    "speech/recognition/conversation/cognitiveservices/v1"
-    "?language=auto&format=detailed"
-)
-
-# Translator endpoint
-TRANSLATE_URL = (
-    "https://api.cognitive.microsofttranslator.com/translate"
-    "?api-version=3.0&to=en"
-)
+from pydub import AudioSegment
 
 st.title("🎙️ Voice → English Translator (Azure REST API)")
 
-# -------------------------------------------------------
-# FUNCTION: STT + Translation
-# -------------------------------------------------------
+AZ_SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
+AZ_SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
+AZ_TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
+
 def transcribe_and_translate(audio_file):
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            tmp.write(audio_file.read())
-            wav_path = tmp.name
+        # Convert to 16k mono wav
+        audio = AudioSegment.from_file(audio_file)
+        audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
 
-        # -----------------------------
-        # 1. Azure Speech-to-Text (REST)
-        # -----------------------------
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            audio.export(tmp.name, format="wav")
+            wav_data = open(tmp.name, "rb").read()
+
+        # --------------------------
+        # 1️⃣ SPEECH-TO-TEXT (Azure REST)
+        # --------------------------
+        stt_url = (
+            f"https://{AZ_SPEECH_REGION}.stt.speech.microsoft.com/"
+            "speech/recognition/conversation/cognitiveservices/v1"
+            "?language=hi-IN"
+        )
+
         stt_headers = {
-            "Ocp-Apim-Subscription-Key": AZURE_SPEECH_KEY,
+            "Ocp-Apim-Subscription-Key": AZ_SPEECH_KEY,
             "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
         }
 
-        with open(wav_path, "rb") as f:
-            stt_response = requests.post(
-                SPEECH_URL,
-                headers=stt_headers,
-                data=f.read()
-            )
+        stt_response = requests.post(stt_url, headers=stt_headers, data=wav_data)
 
-        # Azure returns empty when bad URL → we catch it
         if stt_response.status_code != 200:
-            return f"Azure STT Error: {stt_response.text}", ""
+            return f"STT Error: {stt_response.text}", ""
 
-        result_json = stt_response.json()
+        stt_json = stt_response.json()
+        text = stt_json.get("DisplayText", "")
 
-        # Extract recognized text
-        if "DisplayText" in result_json:
-            transcription = result_json["DisplayText"]
-        else:
-            return "Could not transcribe audio.", ""
+        if not text:
+            return "Could not detect speech.", ""
 
-        # -----------------------------
-        # 2. Azure Translation
-        # -----------------------------
+        # --------------------------
+        # 2️⃣ Translate to English
+        # --------------------------
+        trans_url = (
+            "https://api.cognitive.microsofttranslator.com/translate"
+            "?api-version=3.0&to=en"
+        )
+
         trans_headers = {
-            "Ocp-Apim-Subscription-Key": AZURE_TRANSLATOR_KEY,
-            "Ocp-Apim-Subscription-Region": AZURE_TRANSLATOR_REGION,
+            "Ocp-Apim-Subscription-Key": AZ_TRANSLATOR_KEY,
+            "Ocp-Apim-Subscription-Region": AZ_SPEECH_REGION,
             "Content-Type": "application/json",
         }
 
-        body = [{"text": transcription}]
-        trans_response = requests.post(
-            TRANSLATE_URL,
-            headers=trans_headers,
-            json=body
-        )
-
-        if trans_response.status_code != 200:
-            return transcription, f"Translation Error: {trans_response.text}"
+        body = [{"text": text}]
+        trans_response = requests.post(trans_url, headers=trans_headers, json=body)
 
         translation = trans_response.json()[0]["translations"][0]["text"]
 
-        return transcription, translation
+        return text, translation
 
     except Exception as e:
         return f"Error: {str(e)}", ""
 
 
-# -------------------------------------------------------
+# -----------------------
 # UI
-# -------------------------------------------------------
-audio_input = st.audio_input("🎤 Record your voice (any Indian language)")
+# -----------------------
+audio_input = st.audio_input("Record your voice (any Indian language)")
 
 if audio_input:
     if st.button("Translate to English"):
         with st.spinner("Processing..."):
-            original, english = transcribe_and_translate(audio_input)
+            orig, trans = transcribe_and_translate(audio_input)
+            st.subheader("📄 Original Speech")
+            st.write(orig)
 
-        st.subheader("📝 Original Speech")
-        st.write(original)
-
-        st.subheader("🌍 English Translation")
-        st.success(english)
-
+            st.subheader("🌍 English Translation")
+            st.success(trans)
