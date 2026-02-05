@@ -98,12 +98,13 @@ if audio_input:
         with st.spinner("Processing…"):
             original, lang, translated = transcribe_and_translate(audio_input)
 
-            st.subheader("🌐 Detected Language")
-            st.success(lang)
+            # st.subheader("🌐 Detected Language")
+            # st.success(lang)
 
             st.subheader("📝 Original Speech")
             st.write(original)
 
             st.subheader("🌍 English Translation")
             st.success(translated)
+
 
