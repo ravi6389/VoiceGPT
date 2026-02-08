@@ -1,37 +1,39 @@
 import streamlit as st
-import whisper
 import torch
+import gc
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+import whisper
 import tempfile
 import io
 from pydub import AudioSegment
 
-st.title("🇮🇳 Indian Speech → English (Whisper + NLLB)")
+st.title("🇮🇳 Indian Speech → English (Optimized for Streamlit Cloud)")
 
-# -----------------------
-# Load Whisper tiny
-# -----------------------
+# ----------------------------
+# Load Whisper lazily
+# ----------------------------
 @st.cache_resource
 def load_whisper():
     return whisper.load_model("tiny")
 
-whisper_model = load_whisper()
-
-# -----------------------
-# Load NLLB 600M
-# -----------------------
+# ----------------------------
+# Load NLLB lazily
+# ----------------------------
 @st.cache_resource
 def load_nllb():
     model_name = "facebook/nllb-200-distilled-600M"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-    return tokenizer, model
+    tok = AutoTokenizer.from_pretrained(model_name)
+    mdl = AutoModelForSeq2SeqLM.from_pretrained(model_name, torch_dtype=torch.float16)
+    return tok, mdl
 
-tokenizer, nllb = load_nllb()
+# Convert to wav 16k
+def convert_to_wav(audio_bytes):
+    audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
+    audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        audio.export(tmp.name, format="wav")
+        return tmp.name
 
-# -----------------------
-# Mapping Whisper → NLLB
-# -----------------------
 LANG_MAP = {
     "hi": "hin_Deva",
     "ta": "tam_Taml",
@@ -45,58 +47,38 @@ LANG_MAP = {
     "or": "ory_Orya"
 }
 
-# -----------------------
-# Convert to WAV 16kHz
-# -----------------------
-def convert_to_wav(audio_bytes):
-    audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
-    audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+audio = st.audio_input("🎤 Speak...")
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        audio.export(tmp.name, format="wav")
-        return tmp.name
+if audio and st.button("Translate"):
+    wav = convert_to_wav(audio.read())
+    st.audio(wav)
 
-# -----------------------
-# Translate with NLLB
-# -----------------------
-def translate_to_english(text, src_code):
-    batch = tokenizer(
-        text,
-        return_tensors="pt",
-        src_lang=src_code
-    )
-    output_tokens = nllb.generate(
-        **batch,
-        forced_bos_token_id=tokenizer.lang_code_to_id["eng_Latn"]
-    )
-    return tokenizer.batch_decode(output_tokens, skip_special_tokens=True)[0]
+    st.info("Transcribing with Whisper…")
+    whisper_model = load_whisper()
+    result = whisper_model.transcribe(wav)
+    text = result["text"]
+    lang = result["language"]
 
-# -----------------------
-# UI
-# -----------------------
-audio = st.audio_input("🎤 Speak in any Indian language...")
+    # Free Whisper from memory
+    del whisper_model
+    gc.collect()
+    torch.cuda.empty_cache()
 
-if audio:
-    if st.button("Transcribe & Translate"):
-        st.info("Converting audio...")
-        wav_path = convert_to_wav(audio.read())
-        st.audio(wav_path)
+    st.write("### 🗣 Transcription")
+    st.write(text)
 
-        st.info("Running Whisper (speech-to-text + language detection)...")
-        result = whisper_model.transcribe(wav_path)
-        detected = result["language"]
-        text = result["text"]
+    if lang not in LANG_MAP:
+        st.error("Language not supported by NLLB.")
+    else:
+        st.info("Translating with NLLB…")
+        tokenizer, nllb = load_nllb()
 
-        st.success(f"Detected language: {detected}")
-        st.write("### Transcription")
-        st.write(text)
+        encoded = tokenizer(text, return_tensors="pt", src_lang=LANG_MAP[lang])
+        output_tokens = nllb.generate(
+            **encoded,
+            forced_bos_token_id=tokenizer.lang_code_to_id["eng_Latn"]
+        )
+        eng = tokenizer.decode(output_tokens[0], skip_special_tokens=True)
 
-        if detected not in LANG_MAP:
-            st.error("❌ This language is not mapped for NLLB translation.")
-        else:
-            src_code = LANG_MAP[detected]
-            st.info("Translating using NLLB...")
-            english = translate_to_english(text, src_code)
-
-            st.subheader("🇬🇧 English Translation")
-            st.success(english)
+        st.subheader("🇬🇧 English Translation")
+        st.success(eng)
