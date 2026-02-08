@@ -6,27 +6,30 @@ import io
 from pydub import AudioSegment
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-st.title("🇮🇳 Indian Speech → English Translator (Whisper + IndicTrans2 Lite)")
+st.title("🇮🇳 Speech → English Translator (Whisper + IndicTrans3)")
 
 # -----------------------------
-# Load lightweight models
+# Load Whisper tiny (FAST)
 # -----------------------------
 @st.cache_resource
 def load_whisper():
-    return whisper.load_model("tiny")   # FASTEST for Streamlit Cloud
+    return whisper.load_model("tiny")   # super lightweight for Streamlit Cloud
 
+# -----------------------------
+# Load IndicTrans3
+# -----------------------------
 @st.cache_resource
-def load_indictrans_lite():
-    model_name = "ai4bharat/indictrans2-en-indic-200M"  # Lite model
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name, trust_remote_code=True)
+def load_indictrans3():
+    model_name = "ai4bharat/IndicTrans3-beta"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
     return tokenizer, model
 
 whisper_model = load_whisper()
-tokenizer, indic_model = load_indictrans_lite()
+tokenizer, indic_model = load_indictrans3()
 
 # -----------------------------
-# Convert mic audio → 16k WAV
+# Convert microphone audio → WAV (16k)
 # -----------------------------
 def convert_to_wav(audio_bytes):
     audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
@@ -37,19 +40,19 @@ def convert_to_wav(audio_bytes):
         return tmp.name
 
 # -----------------------------
-# Whisper Speech → Text + Language ID
+# Whisper transcription + language detection
 # -----------------------------
-def transcribe_and_detect(wav_path):
+def transcribe_with_whisper(wav_path):
     return whisper_model.transcribe(wav_path)
 
 # -----------------------------
-# IndicTrans2 → English
+# IndicTrans3 translation
 # -----------------------------
-def translate_to_english(text):
-    inputs = tokenizer(text, return_tensors="pt")
+def translate_indic_to_english(text):
+    encoded = tokenizer(text, return_tensors="pt")
     output = indic_model.generate(
-        **inputs,
-        max_length=256,
+        **encoded,
+        max_length=350,
         num_beams=4,
         early_stopping=True
     )
@@ -58,26 +61,26 @@ def translate_to_english(text):
 # -----------------------------
 # UI
 # -----------------------------
-audio = st.audio_input("🎤 Speak in any Indian language (Hindi, Tamil, Telugu, Kannada, Bengali, etc.)")
+audio = st.audio_input("🎤 Speak in Hindi, Tamil, Telugu, Kannada, Bengali, Marathi, Gujarati, Malayalam, Punjabi, Odia...")
 
 if audio:
     if st.button("Transcribe & Translate"):
         st.info("Converting audio...")
         wav_path = convert_to_wav(audio.read())
+
         st.audio(wav_path)
 
         st.info("Running Whisper (speech-to-text + language detection)...")
-        result = transcribe_and_detect(wav_path)
-
+        result = transcribe_with_whisper(wav_path)
         detected_lang = result["language"]
         original_text = result["text"]
 
-        st.success(f"Detected Language: **{detected_lang}**")
+        st.success(f"Detected Language Code: **{detected_lang}**")
         st.write("### 📝 Transcription")
         st.write(original_text)
 
-        st.info("Translating to English using IndicTrans2 Lite...")
-        english = translate_to_english(original_text)
+        st.info("Translating using IndicTrans3...")
+        english = translate_indic_to_english(original_text)
 
         st.subheader("🇬🇧 English Translation")
         st.success(english)
