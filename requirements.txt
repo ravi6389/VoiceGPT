@@ -12,6 +12,6 @@ transformers
 sentencepiece
 torch
 soundfile
-whisper
+git+https://github.com/openai/whisper.git
 
 
