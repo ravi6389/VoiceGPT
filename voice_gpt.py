@@ -24,7 +24,7 @@ except KeyError as e:
 # -----------------------
 def speech_to_text_auto(audio_path):
     speech_config = speechsdk.SpeechConfig(
-        subscription=AZ_SPEECH_KEY, 
+        subscription=AZ_SPEECH_KEY,
         region=AZ_SPEECH_REGION
     )
 
@@ -34,22 +34,20 @@ def speech_to_text_auto(audio_path):
 
     audio_config = speechsdk.AudioConfig(filename=audio_path)
 
-    # 🔥 Correct class import
-    from azure.cognitiveservices.speech.languageconfig import AutoDetectSourceLanguageRecognizer
-
-    recognizer = AutoDetectSourceLanguageRecognizer(
+    # ✔ This is the correct recognizer for Python (auto-detect supported)
+    recognizer = speechsdk.SpeechRecognizer(
         speech_config=speech_config,
-        auto_detect_source_language_config=auto_detect,
-        audio_config=audio_config
+        audio_config=audio_config,
+        auto_detect_source_language_config=auto_detect
     )
 
     result = recognizer.recognize_once()
 
     if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-        lang = speechsdk.AutoDetectSourceLanguageResult(result).language
-        return result.text, lang
-    else:
-        return None, "unknown"
+        detected_lang = speechsdk.AutoDetectSourceLanguageResult(result).language
+        return result.text, detected_lang
+
+    return None, "unknown"
 
 
 
@@ -106,4 +104,5 @@ if audio_data:
         # Cleanup
         if os.path.exists(temp_wav):
             os.remove(temp_wav)
+
 
