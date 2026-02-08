@@ -26,9 +26,19 @@ if audio_data:
     audio_config = speechsdk.AudioConfig(filename=wav_path)
     recognizer = speechsdk.SpeechRecognizer(speech_config, audio_config)
 
-    result = recognizer.recognize_once()
+    rresult = recognizer.recognize_once()
+    
+    if result.reason == speechsdk.ResultReason.Canceled:
+        cancellation = result.cancellation_details
+        print("Cancellation reason:", cancellation.reason)
+        print("Error details:", cancellation.error_details)
+        print("Did you set the correct key and region?")
+    else:
+        print("Text:", result.text)
+
 
     st.write("Reason:", result.reason)
     st.write("Text:", result.text)
 else:
     st.warning("Please record audio above.")
+
