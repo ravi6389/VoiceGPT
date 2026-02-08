@@ -55,18 +55,32 @@ def speech_to_text_rest(wav_path, lang_code):
 def auto_detect_language(wav_path):
     results = {}
 
+    # Step 1 — Run all models
     for code, name in LANG_MODELS.items():
         st.write(f"Testing {name} model...")
         out = speech_to_text_rest(wav_path, code)
 
-        text = out.get("DisplayText", "")
-        if text:
-            results[code] = text
+        txt = out.get("DisplayText", "")
+        status = out.get("RecognitionStatus", "")
 
+        if status != "Success":
+            continue
+        if not txt:
+            continue
+
+        results[code] = txt
+
+    # If nothing worked
     if not results:
         return None, None
 
-    # Priority: longest non-empty text = best match
+    # Step 2 — Script-based override
+    for code, txt in results.items():
+        detected = detect_script(txt)
+        if detected:
+            return detected, txt
+
+    # Step 3 — Pick the longest valid text
     best_lang = max(results.keys(), key=lambda k: len(results[k]))
     return best_lang, results[best_lang]
 
@@ -115,3 +129,4 @@ if audio_data:
 
             st.subheader("🇬🇧 English Translation")
             st.success(english)
+
