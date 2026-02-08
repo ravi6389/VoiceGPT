@@ -35,9 +35,11 @@ def convert_to_wav(audio_bytes):
 # REST API Speech-to-Text for specific language
 # ----------------------
 def speech_to_text_rest(wav_path, lang_code):
-    url = (f"https://{SPEECH_REGION}.stt.speech.microsoft.com/"
-           f"speech/recognition/interactive/cognitiveservices/v1?language={lang_code}")
+    # url = (f"https://{SPEECH_REGION}.stt.speech.microsoft.com/"
+    #        f"speech/recognition/interactive/cognitiveservices/v1?language={lang_code}")
 
+    url = (f"https://{SPEECH_REGION}.stt.speech.microsoft.com/"
+       f"speech/recognition/interactive/cognitiveservices/v1?language=es-ES")
     headers = {
         "Ocp-Apim-Subscription-Key": SPEECH_KEY,
         "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000"
@@ -142,6 +144,7 @@ if audio_data:
 
             st.subheader("🇬🇧 English Translation")
             st.success(english)
+
 
 
 
