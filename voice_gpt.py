@@ -36,7 +36,7 @@ def convert_to_wav(audio_bytes):
 # ----------------------
 def speech_to_text_rest(wav_path, lang_code):
     url = (f"https://{SPEECH_REGION}.stt.speech.microsoft.com/"
-           f"speech/recognition/dictation/cognitiveservices/v1?language={lang_code}")
+           f"speech/recognition/interactive/cognitiveservices/v1?language={lang_code}")
 
     headers = {
         "Ocp-Apim-Subscription-Key": SPEECH_KEY,
@@ -48,6 +48,7 @@ def speech_to_text_rest(wav_path, lang_code):
 
     response = requests.post(url, headers=headers, data=audio_data)
     return response.json()
+
 
     
 def detect_script(text):
@@ -141,6 +142,7 @@ if audio_data:
 
             st.subheader("🇬🇧 English Translation")
             st.success(english)
+
 
 
 
