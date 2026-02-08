@@ -35,9 +35,10 @@ def speech_to_text_auto(audio_path):
     # Enable multi-language auto-detection
     auto_detect = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
         languages=[
-            "hi-IN","kn-IN","ta-IN","te-IN","ml-IN","mr-IN",
-            "bn-IN","gu-IN","pa-IN","ur-IN",
-            "en-US","en-IN","es-ES","fr-FR","de-DE"
+            "hi-IN","kn-IN","ta-IN"
+            # ,"te-IN","ml-IN","mr-IN",
+            # "bn-IN","gu-IN","pa-IN","ur-IN",
+            # "en-US","en-IN","es-ES","fr-FR","de-DE"
         ]
     )
 
@@ -107,3 +108,4 @@ if audio:
 
                 st.subheader("🌍 English Translation")
                 st.success(eng)
+
