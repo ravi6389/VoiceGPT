@@ -18,68 +18,87 @@ except KeyError as e:
     st.error(f"Missing Secret: {e}. Please add it to Streamlit Secrets.")
     st.stop()
 
-# --- Core Functions ---
+
+# -----------------------
+# SPEECH → TEXT (AUTO)
+# -----------------------
 def speech_to_text_auto(audio_path):
-    speech_config = speechsdk.SpeechConfig(subscription=AZ_SPEECH_KEY, region=AZ_SPEECH_REGION)
-    
-    # LIMIT: Only 4 languages allowed for at-start detection
+    speech_config = speechsdk.SpeechConfig(
+        subscription=AZ_SPEECH_KEY, 
+        region=AZ_SPEECH_REGION
+    )
+
     auto_detect = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
         languages=["hi-IN", "kn-IN", "ta-IN", "en-IN"]
     )
-    
+
     audio_config = speechsdk.AudioConfig(filename=audio_path)
-    recognizer = speechsdk.SpeechRecognizer(
-        speech_config=speech_config, 
-        audio_config=audio_config, 
-        auto_detect_source_language_config=auto_detect
+
+    recognizer = speechsdk.source_language_config.AutoDetectSourceLanguageRecognizer(
+        speech_config=speech_config,
+        auto_detect_source_language_config=auto_detect,
+        audio_config=audio_config
     )
 
     result = recognizer.recognize_once()
-    
+
     if result.reason == speechsdk.ResultReason.RecognizedSpeech:
         lang = speechsdk.AutoDetectSourceLanguageResult(result).language
         return result.text, lang
-    return None, "unknown"
+    else:
+        return None, "unknown"
 
+
+# -----------------------
+# TRANSLATE → ENGLISH
+# -----------------------
 def translate_to_english(text):
-    url = f"https://api.cognitive.microsofttranslator.com"
+    url = f"https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&to=en"
+
     headers = {
         "Ocp-Apim-Subscription-Key": AZ_TRANSLATOR_KEY,
         "Ocp-Apim-Subscription-Region": AZ_TRANSLATOR_REGION,
         "Content-Type": "application/json"
     }
+
     response = requests.post(url, headers=headers, json=[{"text": text}])
+
     return response.json()[0]["translations"][0]["text"]
 
-# --- UI Logic ---
+
+# -----------------------
+# UI
+# -----------------------
 st.title("🎙️ Indian Language → English")
+
 audio_data = st.audio_input("Record your voice")
 
 if audio_data:
     if st.button("Translate"):
-        # 1. FIX: Transcode to 16kHz, 16-bit, Mono WAV
         with st.spinner("Processing audio..."):
+
             audio_segment = AudioSegment.from_file(io.BytesIO(audio_data.read()))
             audio_segment = audio_segment.set_frame_rate(16000).set_channels(1).set_sample_width(2)
-            
+
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                 audio_segment.export(tmp.name, format="wav")
                 temp_wav = tmp.name
 
-        # 2. Transcribe
+        # --- Speech to Text ---
         with st.spinner("Azure is listening..."):
             text, lang = speech_to_text_auto(temp_wav)
 
         if text:
-            st.success(f"Detected: {lang}")
+            st.success(f"Detected Language: {lang}")
             st.write(f"**Original:** {text}")
-            
-            # 3. Translate
+
+            # --- Translate ---
             translation = translate_to_english(text)
             st.subheader("English Translation")
             st.success(translation)
         else:
-            st.error("Azure couldn't detect speech. Check if your recording actually has sound.")
-        
+            st.error("Azure could not detect speech. Try speaking a bit louder and avoid silence.")
+
         # Cleanup
-        if os.path.exists(temp_wav): os.remove(temp_wav)
+        if os.path.exists(temp_wav):
+            os.remove(temp_wav)
