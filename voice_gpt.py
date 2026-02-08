@@ -34,7 +34,10 @@ def speech_to_text_auto(audio_path):
 
     audio_config = speechsdk.AudioConfig(filename=audio_path)
 
-    recognizer = speechsdk.source_language_config.AutoDetectSourceLanguageRecognizer(
+    # 🔥 Correct class import
+    from azure.cognitiveservices.speech.languageconfig import AutoDetectSourceLanguageRecognizer
+
+    recognizer = AutoDetectSourceLanguageRecognizer(
         speech_config=speech_config,
         auto_detect_source_language_config=auto_detect,
         audio_config=audio_config
@@ -47,6 +50,7 @@ def speech_to_text_auto(audio_path):
         return result.text, lang
     else:
         return None, "unknown"
+
 
 
 # -----------------------
@@ -102,3 +106,4 @@ if audio_data:
         # Cleanup
         if os.path.exists(temp_wav):
             os.remove(temp_wav)
+
