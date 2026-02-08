@@ -1,21 +1,33 @@
 import streamlit as st
-import requests
+import whisper
+import torch
 import tempfile
 import io
 from pydub import AudioSegment
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-SPEECH_KEY = st.secrets["AZURE_SPEECH_KEY"]
-SPEECH_REGION = st.secrets["AZURE_SPEECH_REGION"]
-TRANSLATOR_KEY = st.secrets["AZURE_TRANSLATOR_KEY"]
-TRANSLATOR_REGION = st.secrets["AZURE_TRANSLATOR_REGION"]
+st.title("🇮🇳 Indian Speech → English Translator (Whisper + IndicTrans2 Lite)")
 
-LANG_MODELS = {
-    "es-ES": "Spanish",
-    "fr-FR": "French",
-    "it-IT": "Italian"
-}
+# -----------------------------
+# Load lightweight models
+# -----------------------------
+@st.cache_resource
+def load_whisper():
+    return whisper.load_model("tiny")   # FASTEST for Streamlit Cloud
 
-# ---- Convert audio to Azure WAV ----
+@st.cache_resource
+def load_indictrans_lite():
+    model_name = "ai4bharat/indictrans2-en-indic-200M"  # Lite model
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name, trust_remote_code=True)
+    return tokenizer, model
+
+whisper_model = load_whisper()
+tokenizer, indic_model = load_indictrans_lite()
+
+# -----------------------------
+# Convert mic audio → 16k WAV
+# -----------------------------
 def convert_to_wav(audio_bytes):
     audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
     audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
@@ -24,77 +36,48 @@ def convert_to_wav(audio_bytes):
         audio.export(tmp.name, format="wav")
         return tmp.name
 
-# ---- REST STT for a given language ----
-def stt_rest(wav_path, lang):
-    url = f"https://{SPEECH_REGION}.stt.speech.microsoft.com/speech/recognition/interactive/cognitiveservices/v1?language={lang}"
+# -----------------------------
+# Whisper Speech → Text + Language ID
+# -----------------------------
+def transcribe_and_detect(wav_path):
+    return whisper_model.transcribe(wav_path)
 
-    headers = {
-        "Ocp-Apim-Subscription-Key": SPEECH_KEY,
-        "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000"
-    }
-
-    with open(wav_path, "rb") as f:
-        data = f.read()
-
-    resp = requests.post(url, headers=headers, data=data)
-    return resp.json()
-
-# ---- Auto detect among es/fr/it ----
-def auto_detect_language(wav_path):
-    results = {}
-
-    for code, name in LANG_MODELS.items():
-        st.write(f"Testing {name} model...")
-        out = stt_rest(wav_path, code)
-
-        status = out.get("RecognitionStatus", "")
-        text = out.get("DisplayText", "")
-
-        if status == "Success" and text:
-            results[code] = text
-
-    if not results:
-        return None, None
-
-    # Choose longest meaningful text
-    best_lang = max(results.keys(), key=lambda k: len(results[k]))
-    return best_lang, results[best_lang]
-
-# ---- Translate to English ----
+# -----------------------------
+# IndicTrans2 → English
+# -----------------------------
 def translate_to_english(text):
-    url = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&to=en"
+    inputs = tokenizer(text, return_tensors="pt")
+    output = indic_model.generate(
+        **inputs,
+        max_length=256,
+        num_beams=4,
+        early_stopping=True
+    )
+    return tokenizer.decode(output[0], skip_special_tokens=True)
 
-    headers = {
-        "Ocp-Apim-Subscription-Key": TRANSLATOR_KEY,
-        "Ocp-Apim-Subscription-Region": TRANSLATOR_REGION,
-        "Content-Type": "application/json"
-    }
-    resp = requests.post(url, headers=headers, json=[{"text": text}])
-    return resp.json()[0]["translations"][0]["text"]
-
-# ---- UI ----
-st.title("🌍 Auto-Detect: Spanish / French / Italian → English")
-
-audio = st.audio_input("Speak in Spanish, French, or Italian")
+# -----------------------------
+# UI
+# -----------------------------
+audio = st.audio_input("🎤 Speak in any Indian language (Hindi, Tamil, Telugu, Kannada, Bengali, etc.)")
 
 if audio:
-    if st.button("Translate"):
-
+    if st.button("Transcribe & Translate"):
         st.info("Converting audio...")
         wav_path = convert_to_wav(audio.read())
         st.audio(wav_path)
 
-        st.info("Detecting language...")
-        lang_code, original = auto_detect_language(wav_path)
+        st.info("Running Whisper (speech-to-text + language detection)...")
+        result = transcribe_and_detect(wav_path)
 
-        if not lang_code:
-            st.error("Could not detect language. Try speaking clearly.")
-        else:
-            st.success(f"Detected: {LANG_MODELS[lang_code]}")
-            st.write(f"**Original:** {original}")
+        detected_lang = result["language"]
+        original_text = result["text"]
 
-            st.info("Translating to English...")
-            english = translate_to_english(original)
+        st.success(f"Detected Language: **{detected_lang}**")
+        st.write("### 📝 Transcription")
+        st.write(original_text)
 
-            st.subheader("🇬🇧 English Translation")
-            st.success(english)
+        st.info("Translating to English using IndicTrans2 Lite...")
+        english = translate_to_english(original_text)
+
+        st.subheader("🇬🇧 English Translation")
+        st.success(english)
