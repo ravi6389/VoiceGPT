@@ -31,18 +31,19 @@ if audio_data:
     st.write("Reason:", result.reason)
     st.write("Text:", result.text)
     
-    # if result.reason == speechsdk.ResultReason.Canceled:
-    cancellation = result.cancellation_details
-    st.write("Cancellation reason:", cancellation.reason)
-    st.write("Error details:", cancellation.error_details)
-    st.write("Did you set the correct key and region?")
-    # else:
-    #     print("Text:", result.text)
+    if result.reason == speechsdk.ResultReason.Canceled:
+        cancellation = result.cancellation_details
+        st.write("Cancellation reason:", cancellation.reason)
+        st.write("Error details:", cancellation.error_details)
+        st.write("Did you set the correct key and region?")
+    else:
+        print("Text:", result.text)
 
 
 
 else:
     st.warning("Please record audio above.")
+
 
 
 
