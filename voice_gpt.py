@@ -48,6 +48,17 @@ def speech_to_text_rest(wav_path, lang_code):
 
     response = requests.post(url, headers=headers, data=audio_data)
     return response.json()
+    
+def detect_script(text):
+    for ch in text:
+        code = ord(ch)
+        if 0x0C80 <= code <= 0x0CFF:
+            return "kn-IN"   # Kannada script
+        if 0x0B80 <= code <= 0x0BFF:
+            return "ta-IN"   # Tamil script
+        if 0x0900 <= code <= 0x097F:
+            return "hi-IN"   # Hindi/Devanagari script
+    return None
 
 # ----------------------
 # Choose best result among languages
@@ -129,4 +140,5 @@ if audio_data:
 
             st.subheader("🇬🇧 English Translation")
             st.success(english)
+
 
