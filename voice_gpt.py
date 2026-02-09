@@ -16,7 +16,7 @@ st.title("🇮🇳 Indian Speech → English Translation (GCP + Whisper)")
 # =========================================
 def load_gcp_credentials():
     st.write("DEBUG:", st.secrets)
-    st.stop()
+    # st.stop()
     gcp_json = json.dumps(dict(st.secrets))
     with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
         tmp.write(gcp_json.encode("utf-8"))
@@ -112,5 +112,6 @@ if audio and st.button("Translate"):
 
         st.subheader("🇬🇧 English Translation")
         st.success(eng)
+
 
 
