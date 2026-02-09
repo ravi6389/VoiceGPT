@@ -1,32 +1,28 @@
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer, AudioProcessorBase
+import av
+import numpy as np
 import tempfile
 import json
 import os
-import soundfile as sf
-import numpy as np
 from google.cloud import speech
 from google.cloud import translate_v2 as translate
 
 
-# ---------------------------------------------------------
-# Streamlit UI
-# ---------------------------------------------------------
-st.set_page_config(page_title="Indian Speech → English", layout="wide")
-st.title("🎤 Indian Speech → English (Google Cloud Only)")
+# -------------------------------------------
+# PAGE SETTINGS
+# -------------------------------------------
+st.set_page_config(page_title="🎤 Speak → English", layout="wide")
+st.title("🎤 Speak and Translate (Google Cloud Speech-to-Text)")
 
 
-# ---------------------------------------------------------
-# Load GCP Credentials from Streamlit Secrets (FLAT FORMAT)
-# ---------------------------------------------------------
+# -------------------------------------------
+# LOAD GCP CREDENTIALS FROM SECRETS
+# -------------------------------------------
 def load_gcp_credentials():
-    """
-    Writes *all* Streamlit secrets into a temp JSON key file.
-    This is used when secrets.toml DOES NOT have [gcp] header.
-    """
-    gcp_dict = dict(st.secrets)       # full flat secrets
-    json_str = json.dumps(gcp_dict)   # convert to JSON
+    gcp_dict = dict(st.secrets)
+    json_str = json.dumps(gcp_dict)
 
-    # write to temp JSON
     with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
         tmp.write(json_str.encode("utf-8"))
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
@@ -35,93 +31,108 @@ def load_gcp_credentials():
 load_gcp_credentials()
 
 
-# ---------------------------------------------------------
-# Load Google Clients
-# ---------------------------------------------------------
+# -------------------------------------------
+# LOAD GCP CLIENTS
+# -------------------------------------------
 @st.cache_resource
-def get_gcp_clients():
-    speech_client = speech.SpeechClient()
-    translate_client = translate.Client()
-    return speech_client, translate_client
+def load_gcp_clients():
+    return speech.SpeechClient(), translate.Client()
 
 
-speech_client, translate_client = get_gcp_clients()
+speech_client, translate_client = load_gcp_clients()
 
 
-# ---------------------------------------------------------
-# Google Cloud Speech-to-Text for Indian Languages
-# ---------------------------------------------------------
-def transcribe_gcp(audio_array, sample_rate):
-    """Convert PCM audio into Indian language transcription using GCP STT."""
-    try:
-        audio_content = audio_array.tobytes()
+# -------------------------------------------
+# GOOGLE SPEECH TO TEXT
+# -------------------------------------------
+def google_transcribe(pcm_audio, sample_rate):
+    audio = speech.RecognitionAudio(content=pcm_audio)
 
-        audio = speech.RecognitionAudio(content=audio_content)
+    config = speech.RecognitionConfig(
+        enable_automatic_punctuation=True,
+        language_code="hi-IN",
+        alternative_language_codes=[
+            "ta-IN", "te-IN", "kn-IN", "ml-IN", "bn-IN",
+            "mr-IN", "pa-IN", "gu-IN"
+        ],
+        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        sample_rate_hertz=sample_rate,
+        model="latest_long",
+    )
 
-        config = speech.RecognitionConfig(
-            enable_automatic_punctuation=True,
-            language_code="hi-IN",
-            alternative_language_codes=[
-                "ta-IN", "te-IN", "kn-IN", "ml-IN", "bn-IN",
-                "mr-IN", "pa-IN", "gu-IN"
-            ],
-            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-            sample_rate_hertz=sample_rate,
-            model="latest_long",
-        )
+    response = speech_client.recognize(config=config, audio=audio)
 
-        response = speech_client.recognize(config=config, audio=audio)
-
-        if not response.results:
-            return None
-
-        return response.results[0].alternatives[0].transcript
-
-    except Exception as e:
-        st.error(f"Google STT Error: {e}")
+    if not response.results:
         return None
 
+    return response.results[0].alternatives[0].transcript
 
-# ---------------------------------------------------------
-# Google Cloud Translate → English
-# ---------------------------------------------------------
+
+# -------------------------------------------
+# GOOGLE TRANSLATE
+# -------------------------------------------
 def translate_to_english(text):
-    try:
-        result = translate_client.translate(text, target_language="en")
-        return result["translatedText"]
-    except Exception as e:
-        st.error(f"Translation Error: {e}")
-        return None
+    result = translate_client.translate(text, target_language="en")
+    return result["translatedText"]
 
 
-# ---------------------------------------------------------
-# UI — Audio Upload
-# ---------------------------------------------------------
-audio_file = st.file_uploader("🎙 Upload audio file (wav/m4a/mp3)", type=["wav", "mp3", "m4a"])
+# -------------------------------------------
+# AUDIO PROCESSOR
+# -------------------------------------------
+class AudioProcessor(AudioProcessorBase):
+    def __init__(self):
+        self.frames = []
 
-st.info("Indian languages supported: Hindi, Tamil, Telugu, Kannada, Malayalam, Bengali, Punjabi, Gujarati, Marathi")
+    def recv_audio(self, frame: av.AudioFrame) -> av.AudioFrame:
+        pcm = frame.to_ndarray()
+        self.frames.append(pcm)
+        return frame
 
-if audio_file and st.button("Transcribe & Translate"):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
-        temp_audio.write(audio_file.read())
-        temp_path = temp_audio.name
 
-    audio_data, sample_rate = sf.read(temp_path)
+# -------------------------------------------
+# WEBRTC MIC UI
+# -------------------------------------------
+st.subheader("🎙 Speak below")
 
-    if len(audio_data.shape) == 2:  # stereo → mono
-        audio_data = np.mean(audio_data, axis=1)
+webrtc_ctx = webrtc_streamer(
+    key="speech-demo",
+    mode="SENDONLY",
+    audio_receiver_size=256,
+    media_stream_constraints={"audio": True, "video": False},
+    async_processing=True,
+)
 
-    st.write("⏳ **Transcribing using Google…**")
-    text = transcribe_gcp(audio_data.astype(np.float32), sample_rate)
+if webrtc_ctx and webrtc_ctx.audio_receiver:
+    if st.button("⏳ Process Speech"):
+        audio_receiver = webrtc_ctx.audio_receiver
 
-    if not text:
-        st.error("Google Cloud could not transcribe this audio.")
-    else:
-        st.subheader("🗣 Transcription")
-        st.success(text)
+        frames = []
+        while True:
+            try:
+                frame = audio_receiver.get_frame(timeout=1)
+                frames.append(frame.to_ndarray())
+            except:
+                break
 
-        st.write("⏳ **Translating to English…**")
-        english = translate_to_english(text)
+        if not frames:
+            st.warning("No audio captured.")
+        else:
+            st.success("🎧 Audio captured!")
 
-        st.subheader("🇬🇧 English Translation")
-        st.success(english)
+            pcm = np.concatenate(frames).astype(np.int16).tobytes()
+            sample_rate = 48000  # WebRTC default
+
+            st.write("⏳ Transcribing using Google...")
+            text = google_transcribe(pcm, sample_rate)
+
+            if text:
+                st.subheader("🗣 Transcription")
+                st.success(text)
+
+                st.write("⏳ Translating to English...")
+                eng = translate_to_english(text)
+
+                st.subheader("🇬🇧 English Translation")
+                st.success(eng)
+            else:
+                st.error("Google could not transcribe your speech.")
