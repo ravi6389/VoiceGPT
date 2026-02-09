@@ -1,7 +1,7 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, AudioProcessorBase
-import av
+from audiorecorder import audiorecorder
 import numpy as np
+import soundfile as sf
 import tempfile
 import json
 import os
@@ -12,15 +12,15 @@ from google.cloud import translate_v2 as translate
 # -------------------------------------------
 # PAGE SETTINGS
 # -------------------------------------------
-st.set_page_config(page_title="🎤 Speak → English", layout="wide")
-st.title("🎤 Speak and Translate (Google Cloud Speech-to-Text)")
+st.set_page_config(page_title="🎤 Speak → English", layout="centered")
+st.title("🎤 Speak and Translate (Google STT)")
 
 
 # -------------------------------------------
 # LOAD GCP CREDENTIALS FROM SECRETS
 # -------------------------------------------
 def load_gcp_credentials():
-    gcp_dict = dict(st.secrets)
+    gcp_dict = dict(st.secrets)   # you asked to use direct secrets
     json_str = json.dumps(gcp_dict)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
@@ -77,62 +77,38 @@ def translate_to_english(text):
 
 
 # -------------------------------------------
-# AUDIO PROCESSOR
+# AUDIO RECORDER UI
 # -------------------------------------------
-class AudioProcessor(AudioProcessorBase):
-    def __init__(self):
-        self.frames = []
+st.subheader("🎙 Speak Below")
 
-    def recv_audio(self, frame: av.AudioFrame) -> av.AudioFrame:
-        pcm = frame.to_ndarray()
-        self.frames.append(pcm)
-        return frame
+audio = audiorecorder("Start Recording", "Stop Recording")
 
+if len(audio) > 0:
+    st.success("🎧 Recording complete!")
+    st.audio(audio.tobytes(), format="audio/wav")
 
-# -------------------------------------------
-# WEBRTC MIC UI
-# -------------------------------------------
-st.subheader("🎙 Speak below")
+    # Save to WAV
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
+        wav_path = temp_audio.name
+        sf.write(wav_path, np.array(audio), 44100)  # recorder always records at 44.1kHz
 
-webrtc_ctx = webrtc_streamer(
-    key="speech-demo",
-    mode="SENDONLY",
-    audio_receiver_size=256,
-    media_stream_constraints={"audio": True, "video": False},
-    async_processing=True,
-)
+    # Read PCM bytes
+    pcm_data, sr = sf.read(wav_path, dtype="int16")
+    pcm_bytes = pcm_data.tobytes()
 
-if webrtc_ctx and webrtc_ctx.audio_receiver:
-    if st.button("⏳ Process Speech"):
-        audio_receiver = webrtc_ctx.audio_receiver
+    if st.button("⏳ Transcribe & Translate"):
+        st.write("⏳ Transcribing using Google...")
 
-        frames = []
-        while True:
-            try:
-                frame = audio_receiver.get_frame(timeout=1)
-                frames.append(frame.to_ndarray())
-            except:
-                break
+        text = google_transcribe(pcm_bytes, sr)
 
-        if not frames:
-            st.warning("No audio captured.")
+        if text:
+            st.subheader("🗣 Transcription")
+            st.success(text)
+
+            st.write("⏳ Translating to English...")
+            eng = translate_to_english(text)
+
+            st.subheader("🇬🇧 English Translation")
+            st.success(eng)
         else:
-            st.success("🎧 Audio captured!")
-
-            pcm = np.concatenate(frames).astype(np.int16).tobytes()
-            sample_rate = 48000  # WebRTC default
-
-            st.write("⏳ Transcribing using Google...")
-            text = google_transcribe(pcm, sample_rate)
-
-            if text:
-                st.subheader("🗣 Transcription")
-                st.success(text)
-
-                st.write("⏳ Translating to English...")
-                eng = translate_to_english(text)
-
-                st.subheader("🇬🇧 English Translation")
-                st.success(eng)
-            else:
-                st.error("Google could not transcribe your speech.")
+            st.error("Google could not transcribe your speech.")
