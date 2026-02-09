@@ -1,15 +1,13 @@
 import streamlit as st
-import torch
-import gc
-import whisper
 import tempfile
 import io
 import json
 import os
 from pydub import AudioSegment
+from google.cloud import speech_v1p1beta1 as speech
 from google.cloud import translate_v3 as translate
 
-st.title("🇮🇳 Indian Speech → English Translation (GCP + Whisper)")
+st.title("🇮🇳 Indian Speech → English Translation (Google Speech-to-Text + Translate)")
 
 # =========================================
 # Load GCP credentials securely via Secrets
@@ -26,18 +24,18 @@ def load_gcp_credentials():
         tmp.write(gcp_json.encode("utf-8"))
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
 
-
 load_gcp_credentials()
+
 
 # =========================================
 # Google Cloud Translate Client
 # =========================================
 @st.cache_resource
-def get_gcp_client():
+def get_gcp_translate_client():
     return translate.TranslationServiceClient()
 
 def gcp_translate_text(text, src_lang, project_id="speech-translate-486811"):
-    client = get_gcp_client()
+    client = get_gcp_translate_client()
     parent = f"projects/{project_id}/locations/global"
 
     response = client.translate_text(
@@ -50,11 +48,41 @@ def gcp_translate_text(text, src_lang, project_id="speech-translate-486811"):
 
 
 # =========================================
-# Load Whisper
+# Google Cloud Speech-to-Text Client
 # =========================================
 @st.cache_resource
-def load_whisper():
-    return whisper.load_model("tiny")
+def get_speech_client():
+    return speech.SpeechClient()
+
+
+def google_stt_transcribe(wav_path):
+    client = get_speech_client()
+
+    with open(wav_path, "rb") as f:
+        audio_bytes = f.read()
+
+    audio = speech.RecognitionAudio(content=audio_bytes)
+
+    config = speech.RecognitionConfig(
+        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        sample_rate_hertz=16000,
+        language_code="hi-IN",
+        alternative_language_codes=[
+            "hi-IN", "ta-IN", "te-IN", "kn-IN", "ml-IN",
+            "bn-IN", "pa-IN", "gu-IN", "mr-IN", "or-IN"
+        ],
+        enable_automatic_punctuation=True
+    )
+
+    response = client.recognize(config=config, audio=audio)
+
+    if not response.results:
+        return "", ""
+
+    transcript = response.results[0].alternatives[0].transcript
+    detected_lang = response.results[0].language_code if hasattr(response.results[0], "language_code") else ""
+
+    return transcript, detected_lang
 
 
 # =========================================
@@ -70,19 +98,19 @@ def convert_to_wav(audio_bytes):
 
 
 # =========================================
-# Whisper language → GCP language mapping
+# Whisper language → GCP language mapping (still used)
 # =========================================
 LANG_MAP = {
-    "hi": "hi",     # Hindi
-    "ta": "ta",     # Tamil
-    "te": "te",     # Telugu
-    "kn": "kn",     # Kannada
-    "ml": "ml",     # Malayalam
-    "bn": "bn",     # Bengali
-    "pa": "pa",     # Punjabi
-    "gu": "gu",     # Gujarati
-    "mr": "mr",     # Marathi
-    "or": "or"      # Odia
+    "hi": "hi",
+    "ta": "ta",
+    "te": "te",
+    "kn": "kn",
+    "ml": "ml",
+    "bn": "bn",
+    "pa": "pa",
+    "gu": "gu",
+    "mr": "mr",
+    "or": "or"
 }
 
 
@@ -95,26 +123,24 @@ if audio and st.button("Translate"):
     wav = convert_to_wav(audio.read())
     st.audio(wav)
 
-    st.info("Transcribing audio with Whisper…")
-    whisper_model = load_whisper()
-    result = whisper_model.transcribe(wav)
-    text = result["text"]
-    lang = result["language"]
+    st.info("Transcribing audio using Google Speech-to-Text…")
+    text, lang_code = google_stt_transcribe(wav)
 
-    # Free Whisper GPU/CPU memory
-    del whisper_model
-    gc.collect()
-    torch.cuda.empty_cache()
+    if not text:
+        st.error("Google could not transcribe your audio. Try again.")
+        st.stop()
 
     st.write("### 🗣 Transcription")
     st.success(text)
 
-    if lang not in LANG_MAP:
-        st.error(f"Detected language '{lang}' is not supported.")
+    # Google returns lang in format "hi-IN" → convert to "hi"
+    lang_short = lang_code.split("-")[0] if lang_code else ""
+
+    if lang_short not in LANG_MAP:
+        st.error(f"Detected language '{lang_short}' is not supported.")
     else:
         st.info("Translating using Google Cloud Translation API…")
-        eng = gcp_translate_text(text, LANG_MAP[lang])
+        eng = gcp_translate_text(text, LANG_MAP[lang_short])
 
         st.subheader("🇬🇧 English Translation")
         st.success(eng)
-
