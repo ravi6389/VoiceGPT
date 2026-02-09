@@ -1,114 +1,112 @@
 import streamlit as st
-from audiorecorder import audiorecorder
-import numpy as np
-import soundfile as sf
+import torch
+import gc
+import whisper
 import tempfile
+import io
 import json
 import os
-from google.cloud import speech
-from google.cloud import translate_v2 as translate
+from pydub import AudioSegment
+from google.cloud import translate_v3 as translate
 
+st.title("🇮🇳 Indian Speech → English Translation (GCP + Whisper)")
 
-# -------------------------------------------
-# PAGE SETTINGS
-# -------------------------------------------
-st.set_page_config(page_title="🎤 Speak → English", layout="centered")
-st.title("🎤 Speak and Translate (Google STT)")
-
-
-# -------------------------------------------
-# LOAD GCP CREDENTIALS FROM SECRETS
-# -------------------------------------------
+# =========================================
+# Load GCP credentials securely via Secrets
+# =========================================
 def load_gcp_credentials():
-    gcp_dict = dict(st.secrets)   # you asked to use direct secrets
-    json_str = json.dumps(gcp_dict)
-
+    gcp_json = json.dumps(st.secrets)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
-        tmp.write(json_str.encode("utf-8"))
+        tmp.write(gcp_json.encode("utf-8"))
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
-
 
 load_gcp_credentials()
 
-
-# -------------------------------------------
-# LOAD GCP CLIENTS
-# -------------------------------------------
+# =========================================
+# Google Cloud Translate Client
+# =========================================
 @st.cache_resource
-def load_gcp_clients():
-    return speech.SpeechClient(), translate.Client()
+def get_gcp_client():
+    return translate.TranslationServiceClient()
 
+def gcp_translate_text(text, src_lang, project_id="speech-translate-486811"):
+    client = get_gcp_client()
+    parent = f"projects/{project_id}/locations/global"
 
-speech_client, translate_client = load_gcp_clients()
-
-
-# -------------------------------------------
-# GOOGLE SPEECH TO TEXT
-# -------------------------------------------
-def google_transcribe(pcm_audio, sample_rate):
-    audio = speech.RecognitionAudio(content=pcm_audio)
-
-    config = speech.RecognitionConfig(
-        enable_automatic_punctuation=True,
-        language_code="hi-IN",
-        alternative_language_codes=[
-            "ta-IN", "te-IN", "kn-IN", "ml-IN", "bn-IN",
-            "mr-IN", "pa-IN", "gu-IN"
-        ],
-        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-        sample_rate_hertz=sample_rate,
-        model="latest_long",
+    response = client.translate_text(
+        contents=[text],
+        target_language_code="en",
+        source_language_code=src_lang,
+        parent=parent
     )
-
-    response = speech_client.recognize(config=config, audio=audio)
-
-    if not response.results:
-        return None
-
-    return response.results[0].alternatives[0].transcript
+    return response.translations[0].translated_text
 
 
-# -------------------------------------------
-# GOOGLE TRANSLATE
-# -------------------------------------------
-def translate_to_english(text):
-    result = translate_client.translate(text, target_language="en")
-    return result["translatedText"]
+# =========================================
+# Load Whisper
+# =========================================
+@st.cache_resource
+def load_whisper():
+    return whisper.load_model("tiny")
 
 
-# -------------------------------------------
-# AUDIO RECORDER UI
-# -------------------------------------------
-st.subheader("🎙 Speak Below")
+# =========================================
+# Audio Conversion
+# =========================================
+def convert_to_wav(audio_bytes):
+    audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
+    audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
 
-audio = audiorecorder("Start Recording", "Stop Recording")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        audio.export(tmp.name, format="wav")
+        return tmp.name
 
-if len(audio) > 0:
-    st.success("🎧 Recording complete!")
-    st.audio(audio.tobytes(), format="audio/wav")
 
-    # Save to WAV
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
-        wav_path = temp_audio.name
-        sf.write(wav_path, np.array(audio), 44100)  # recorder always records at 44.1kHz
+# =========================================
+# Whisper language → GCP language mapping
+# =========================================
+LANG_MAP = {
+    "hi": "hi",     # Hindi
+    "ta": "ta",     # Tamil
+    "te": "te",     # Telugu
+    "kn": "kn",     # Kannada
+    "ml": "ml",     # Malayalam
+    "bn": "bn",     # Bengali
+    "pa": "pa",     # Punjabi
+    "gu": "gu",     # Gujarati
+    "mr": "mr",     # Marathi
+    "or": "or"      # Odia
+}
 
-    # Read PCM bytes
-    pcm_data, sr = sf.read(wav_path, dtype="int16")
-    pcm_bytes = pcm_data.tobytes()
 
-    if st.button("⏳ Transcribe & Translate"):
-        st.write("⏳ Transcribing using Google...")
+# =========================================
+# User Input
+# =========================================
+audio = st.audio_input("🎤 Speak something in any Indian language…")
 
-        text = google_transcribe(pcm_bytes, sr)
+if audio and st.button("Translate"):
+    wav = convert_to_wav(audio.read())
+    st.audio(wav)
 
-        if text:
-            st.subheader("🗣 Transcription")
-            st.success(text)
+    st.info("Transcribing audio with Whisper…")
+    whisper_model = load_whisper()
+    result = whisper_model.transcribe(wav)
+    text = result["text"]
+    lang = result["language"]
 
-            st.write("⏳ Translating to English...")
-            eng = translate_to_english(text)
+    # Free Whisper GPU/CPU memory
+    del whisper_model
+    gc.collect()
+    torch.cuda.empty_cache()
 
-            st.subheader("🇬🇧 English Translation")
-            st.success(eng)
-        else:
-            st.error("Google could not transcribe your speech.")
+    st.write("### 🗣 Transcription")
+    st.success(text)
+
+    if lang not in LANG_MAP:
+        st.error(f"Detected language '{lang}' is not supported.")
+    else:
+        st.info("Translating using Google Cloud Translation API…")
+        eng = gcp_translate_text(text, LANG_MAP[lang])
+
+        st.subheader("🇬🇧 English Translation")
+        st.success(eng)
