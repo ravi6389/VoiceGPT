@@ -1,37 +1,18 @@
-streamlit>=1.40.0
-scipy
-numpy
-azure-cognitiveservices-speech==1.36.0
-requests
-streamlit-audiorecorder
-pydub
-
-
-
-transformers
-sentencepiece
-torch
-soundfile
-git+https://github.com/openai/whisper.git
-
-
-numpy
-scipy
-requests
-pydub
-sentencepiece
-soundfile
-
-
-
-# PyTorch (CPU)
-torch
-
-
-
-# Google Cloud Translation API v3
-google-cloud-translate==3.12.0
-google-cloud-speech
-
+streamlit==1.40.0
 streamlit-webrtc==0.45.0
 av==11.0.0
+
+google-cloud-speech
+google-cloud-translate
+
+numpy
+soundfile
+
+# azure-cognitiveservices-speech
+# requests
+# streamlit-audiorecorder
+# pydub
+# transformers
+# sentencepiece
+# torch
+# git+https://github.com/openai/whisper.git
