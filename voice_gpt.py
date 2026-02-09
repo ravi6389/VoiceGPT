@@ -1,84 +1,112 @@
 import streamlit as st
 import torch
 import gc
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import whisper
 import tempfile
 import io
+import json
+import os
 from pydub import AudioSegment
+from google.cloud import translate_v3 as translate
 
-st.title("🇮🇳 Indian Speech → English (Optimized for Streamlit Cloud)")
+st.title("🇮🇳 Indian Speech → English Translation (GCP + Whisper)")
 
-# ----------------------------
-# Load Whisper lazily
-# ----------------------------
+# =========================================
+# Load GCP credentials securely via Secrets
+# =========================================
+def load_gcp_credentials():
+    gcp_json = json.dumps(st.secrets["gcp"])
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
+        tmp.write(gcp_json.encode("utf-8"))
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+
+load_gcp_credentials()
+
+# =========================================
+# Google Cloud Translate Client
+# =========================================
+@st.cache_resource
+def get_gcp_client():
+    return translate.TranslationServiceClient()
+
+def gcp_translate_text(text, src_lang, project_id="speech-translate-486811"):
+    client = get_gcp_client()
+    parent = f"projects/{project_id}/locations/global"
+
+    response = client.translate_text(
+        contents=[text],
+        target_language_code="en",
+        source_language_code=src_lang,
+        parent=parent
+    )
+    return response.translations[0].translated_text
+
+
+# =========================================
+# Load Whisper
+# =========================================
 @st.cache_resource
 def load_whisper():
     return whisper.load_model("tiny")
 
-# ----------------------------
-# Load NLLB lazily
-# ----------------------------
-@st.cache_resource
-def load_nllb():
-    model_name = "facebook/nllb-200-distilled-600M"
-    tok = AutoTokenizer.from_pretrained(model_name)
-    mdl = AutoModelForSeq2SeqLM.from_pretrained(model_name, torch_dtype=torch.float16)
-    return tok, mdl
 
-# Convert to wav 16k
+# =========================================
+# Audio Conversion
+# =========================================
 def convert_to_wav(audio_bytes):
     audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
     audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         audio.export(tmp.name, format="wav")
         return tmp.name
 
+
+# =========================================
+# Whisper language → GCP language mapping
+# =========================================
 LANG_MAP = {
-    "hi": "hin_Deva",
-    "ta": "tam_Taml",
-    "te": "tel_Telu",
-    "kn": "kan_Knda",
-    "ml": "mal_Mlym",
-    "bn": "ben_Beng",
-    "pa": "pan_Guru",
-    "gu": "guj_Gujr",
-    "mr": "mar_Deva",
-    "or": "ory_Orya"
+    "hi": "hi",     # Hindi
+    "ta": "ta",     # Tamil
+    "te": "te",     # Telugu
+    "kn": "kn",     # Kannada
+    "ml": "ml",     # Malayalam
+    "bn": "bn",     # Bengali
+    "pa": "pa",     # Punjabi
+    "gu": "gu",     # Gujarati
+    "mr": "mr",     # Marathi
+    "or": "or"      # Odia
 }
 
-audio = st.audio_input("🎤 Speak...")
+
+# =========================================
+# User Input
+# =========================================
+audio = st.audio_input("🎤 Speak something in any Indian language…")
 
 if audio and st.button("Translate"):
     wav = convert_to_wav(audio.read())
     st.audio(wav)
 
-    st.info("Transcribing with Whisper…")
+    st.info("Transcribing audio with Whisper…")
     whisper_model = load_whisper()
     result = whisper_model.transcribe(wav)
     text = result["text"]
     lang = result["language"]
 
-    # Free Whisper from memory
+    # Free Whisper GPU/CPU memory
     del whisper_model
     gc.collect()
     torch.cuda.empty_cache()
 
     st.write("### 🗣 Transcription")
-    st.write(text)
+    st.success(text)
 
     if lang not in LANG_MAP:
-        st.error("Language not supported by NLLB.")
+        st.error(f"Detected language '{lang}' is not supported.")
     else:
-        st.info("Translating with NLLB…")
-        tokenizer, nllb = load_nllb()
-
-        encoded = tokenizer(text, return_tensors="pt", src_lang=LANG_MAP[lang])
-        output_tokens = nllb.generate(
-            **encoded,
-            forced_bos_token_id=tokenizer.lang_code_to_id["eng_Latn"]
-        )
-        eng = tokenizer.decode(output_tokens[0], skip_special_tokens=True)
+        st.info("Translating using Google Cloud Translation API…")
+        eng = gcp_translate_text(text, LANG_MAP[lang])
 
         st.subheader("🇬🇧 English Translation")
         st.success(eng)
