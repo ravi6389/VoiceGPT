@@ -15,10 +15,17 @@ st.title("🇮🇳 Indian Speech → English Translation (GCP + Whisper)")
 # Load GCP credentials securely via Secrets
 # =========================================
 def load_gcp_credentials():
-    gcp_json = json.dumps(st.secrets)
+    # Convert Secrets object → normal dict
+    gcp_dict = {k: st.secrets[k] for k in st.secrets}
+
+    # Convert dict → JSON string
+    gcp_json = json.dumps(gcp_dict)
+
+    # Write to temp file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
         tmp.write(gcp_json.encode("utf-8"))
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+
 
 load_gcp_credentials()
 
@@ -110,3 +117,4 @@ if audio and st.button("Translate"):
 
         st.subheader("🇬🇧 English Translation")
         st.success(eng)
+
