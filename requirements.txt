@@ -15,3 +15,20 @@ soundfile
 git+https://github.com/openai/whisper.git
 
 
+numpy
+scipy
+requests
+pydub
+sentencepiece
+soundfile
+
+
+
+# PyTorch (CPU)
+torch
+
+
+
+# Google Cloud Translation API v3
+google-cloud-translate==3.12.0
+
