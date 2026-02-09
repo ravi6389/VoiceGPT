@@ -66,9 +66,9 @@ def google_stt_transcribe(wav_path):
     config = speech.RecognitionConfig(
         encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
         sample_rate_hertz=16000,
-        language_code="hi-IN",
+        language_code="kn-IN",
         alternative_language_codes=[
-            "hi-IN", "ta-IN", "te-IN", "kn-IN", "ml-IN",
+            "hi-IN", "ta-IN", "te-IN", "hi-IN", "ml-IN",
             "bn-IN", "pa-IN", "gu-IN", "mr-IN", "or-IN"
         ],
         enable_automatic_punctuation=True
@@ -144,3 +144,4 @@ if audio and st.button("Translate"):
 
         st.subheader("🇬🇧 English Translation")
         st.success(eng)
+
