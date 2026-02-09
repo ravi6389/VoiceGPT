@@ -33,4 +33,6 @@ torch
 google-cloud-translate==3.12.0
 google-cloud-speech
 
+streamlit-webrtc
+av
 
