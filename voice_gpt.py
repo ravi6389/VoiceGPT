@@ -99,12 +99,12 @@ LANGUAGES = {
     "Kannada": ("kn-IN", "kn"),
     "Tamil": ("ta-IN", "ta"),
     "Telugu": ("te-IN", "te"),
-    "Malayalam": ("ml-IN", "ml"),
-    "Bengali": ("bn-IN", "bn"),
-    "Punjabi": ("pa-IN", "pa"),
-    "Gujarati": ("gu-IN", "gu"),
-    "Marathi": ("mr-IN", "mr"),
-    "Odia": ("or-IN", "or"),
+    "Malayalam": ("ml-IN", "ml")
+    # "Bengali": ("bn-IN", "bn"),
+    # "Punjabi": ("pa-IN", "pa"),
+    # "Gujarati": ("gu-IN", "gu"),
+    # "Marathi": ("mr-IN", "mr"),
+    # "Odia": ("or-IN", "or"),
 }
 
 # User selects language
@@ -136,3 +136,4 @@ if audio and st.button("Translate"):
 
     st.subheader("🇬🇧 English Translation")
     st.success(eng)
+
