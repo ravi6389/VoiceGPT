@@ -1,0 +1,16 @@
+streamlit==1.40.0
+streamlit-audiorecorder
+google-cloud-speech
+google-cloud-translate
+numpy
+soundfile
+
+
+# azure-cognitiveservices-speech
+# requests
+# streamlit-audiorecorder
+# pydub
+# transformers
+# sentencepiece
+# torch
+# git+https://github.com/openai/whisper.git
