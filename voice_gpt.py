@@ -20,8 +20,9 @@ st.title("🎤 Indian Speech → English (Google Cloud Only)")
 # ---------------------------------------------------------
 def load_gcp_credentials():
     """Writes the [gcp] secrets block into a temp JSON key file."""
-    gcp_dict = dict(st.secrets["gcp"])
-    json_str = json.dumps(gcp_dict)
+    # gcp_dict = dict(st.secrets["gcp"])
+    # json_str = json.dumps(gcp_dict)
+    json_str = json.dumps(dict(st.secrets))
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
         tmp.write(json_str.encode("utf-8"))
@@ -123,3 +124,4 @@ if audio_file and st.button("Transcribe & Translate"):
 
         st.subheader("🇬🇧 English Translation")
         st.success(english)
+
